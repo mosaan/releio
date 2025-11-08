@@ -228,6 +228,46 @@ graph TB
 - See `docs/FOR_DEVELOPERS.md` for examples of architecture diagrams and sequence diagrams
 - For complex UML diagrams, PlantUML is an acceptable alternative (requires additional tooling)
 
+## Database Inspection
+
+When you need to inspect the SQLite database contents during development or debugging:
+
+### Use sqlite3 Command (Recommended)
+
+**sqlite3** is the standard command-line tool for SQLite databases. It provides a consistent interface across platforms and is the recommended method for both human developers and coding agents.
+
+**Common inspection commands**:
+
+```bash
+# View all settings
+sqlite3 ./tmp/db/app.db "SELECT * FROM settings"
+
+# View AI configuration (formatted)
+sqlite3 ./tmp/db/app.db "SELECT key, json_pretty(value) FROM settings WHERE key='ai'"
+
+# List all setting keys
+sqlite3 ./tmp/db/app.db "SELECT key FROM settings"
+
+# View table schema
+sqlite3 ./tmp/db/app.db ".schema settings"
+```
+
+**If sqlite3 is not available**:
+- Inform the user that `sqlite3` command is not found
+- Recommend installation for their platform:
+  - macOS: `brew install sqlite3`
+  - Ubuntu/Debian: `sudo apt-get install sqlite3`
+  - Windows: `choco install sqlite` or `scoop install sqlite`
+- As an alternative, suggest using Drizzle Studio: `pnpm run drizzle-kit studio`
+
+**Why sqlite3 is preferred**:
+- Standard tool across all SQLite projects
+- Same commands work for developers and coding agents
+- No project-specific scripts needed
+- Widely documented and supported
+
+See `docs/FOR_DEVELOPERS.md` for more detailed examples and usage patterns.
+
 ## Commit Guidelines
 
 - Keep commit messages concise and descriptive

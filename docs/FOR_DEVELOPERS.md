@@ -616,7 +616,76 @@ const apiKey = aiSettings.anthropic_api_key        // 'sk-ant-...'
 const model = aiSettings.anthropic_model           // 'claude-3-5-sonnet-20241022'
 ```
 
-**Drizzle Studio で確認**:
+### データベースの確認方法
+
+#### 方法1: sqlite3 コマンド（推奨）
+
+**sqlite3** は SQLite データベースを操作する標準的なコマンドラインツールです。開発者もコーディングエージェントも同じ方法でデータベースを確認できます。
+
+**sqlite3 のインストール**:
+
+```bash
+# macOS (Homebrew)
+brew install sqlite3
+
+# Ubuntu/Debian
+sudo apt-get install sqlite3
+
+# Windows (Chocolatey)
+choco install sqlite
+
+# Windows (Scoop)
+scoop install sqlite
+```
+
+**基本的な使い方**:
+
+```bash
+# データベースに接続
+sqlite3 ./tmp/db/app.db
+
+# SQLite プロンプトで以下を実行:
+# .tables          - テーブル一覧を表示
+# .schema settings - テーブルのスキーマを表示
+# .mode json       - 出力形式をJSONに変更
+# .quit            - 終了
+```
+
+**よく使うクエリ例**:
+
+```bash
+# すべての設定を表示
+sqlite3 ./tmp/db/app.db "SELECT * FROM settings"
+
+# JSON形式で表示
+sqlite3 ./tmp/db/app.db ".mode json" "SELECT * FROM settings"
+
+# AI設定のみを整形して表示
+sqlite3 ./tmp/db/app.db "SELECT key, json_pretty(value) FROM settings WHERE key='ai'"
+
+# 設定キーの一覧を表示
+sqlite3 ./tmp/db/app.db "SELECT key FROM settings"
+```
+
+**ワンライナーでJSON整形**:
+
+```bash
+# settings テーブルの内容を見やすく表示
+sqlite3 ./tmp/db/app.db "SELECT json_pretty(value) FROM settings WHERE key='ai'"
+```
+
+**出力例**:
+```json
+{
+  "default_provider": "google",
+  "google_api_key": "AIzaSy...",
+  "google_model": "gemini-2.5-pro"
+}
+```
+
+#### 方法2: Drizzle Studio（GUI）
+
+ブラウザベースのデータベースビューアー：
 
 ```bash
 pnpm run drizzle-kit studio
