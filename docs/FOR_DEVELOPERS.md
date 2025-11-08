@@ -11,6 +11,8 @@
 - [AI チャットの処理フロー](#ai-チャットの処理フロー)
 - [主な開発コマンド](#主な開発コマンド)
 - [パスエイリアス](#パスエイリアス)
+- [ログ設定](#ログ設定)
+- [データ管理とストレージ](#データ管理とストレージ)
 - [デバッグ方法](#デバッグ方法)
 
 ## 環境構築・セットアップ
@@ -497,12 +499,195 @@ grep '\[backend\]' ./tmp/logs/app.log
 grep '\[error\]' ./tmp/logs/app.log
 ```
 
-## データベース設定
+## データ管理とストレージ
 
-- **開発環境**: `./tmp/db/app.db`
-- **本番環境**: Electron の userData ディレクトリ `/db/app.db`
-- **マイグレーション**: `resources/db/migrations/`（ビルドに含まれる）
-- **スキーマ**: 設定用のkey-valueストレージテーブル
+このプロジェクトでは、アプリケーションの設定やデータを SQLite データベースで管理しています。
+
+### データベース概要
+
+- **DB エンジン**: SQLite（better-sqlite3）
+- **ORM**: Drizzle ORM（型安全なクエリ）
+- **ファイル形式**: 単一の `.db` ファイル
+- **マイグレーション**: Drizzle Kit で管理
+
+### データベースファイルの場所
+
+```mermaid
+graph TB
+    subgraph Development[開発環境]
+        DevDB["./tmp/db/app.db<br/>（プロジェクトルート）"]
+    end
+
+    subgraph Production[本番環境]
+        ProdWin["Windows:<br/>C:\Users\&lt;user&gt;\AppData\Roaming\electron-ai-starter\db\app.db"]
+        ProdMac["macOS:<br/>~/Library/Application Support/electron-ai-starter/db/app.db"]
+        ProdLinux["Linux:<br/>~/.config/electron-ai-starter/db/app.db"]
+    end
+```
+
+**開発環境**:
+- パス: `./tmp/db/app.db`
+- `.gitignore` に含まれており、Git 管理外
+- リセット: `pnpm run db:reset`
+
+**本番環境**:
+- Electron の `userData` ディレクトリ内
+- **Windows**: `C:\Users\<username>\AppData\Roaming\electron-ai-starter\db\app.db`
+- **macOS**: `~/Library/Application Support/electron-ai-starter/db/app.db`
+- **Linux**: `~/.config/electron-ai-starter/db/app.db`
+
+### データベーススキーマ
+
+現在のスキーマは非常にシンプルで、設定情報を key-value 形式で保存します。
+
+#### settings テーブル
+
+```sql
+CREATE TABLE settings (
+  key TEXT PRIMARY KEY NOT NULL,
+  value TEXT NOT NULL  -- JSON形式で保存
+);
+```
+
+**用途**:
+- AI プロバイダーの設定（API キー、選択中のプロバイダー、モデル名）
+- アプリケーション設定（テーマ、言語など）
+
+**データ例**:
+
+| key | value (JSON) |
+|-----|-------------|
+| `aiProvider` | `"anthropic"` |
+| `anthropic.apiKey` | `"sk-ant-..."` |
+| `anthropic.model` | `"claude-3-5-sonnet-20241022"` |
+
+### マイグレーション管理
+
+**マイグレーションファイルの場所**: `resources/db/migrations/`
+
+このディレクトリは本番ビルドに含まれ、アプリケーション起動時に自動実行されます。
+
+#### マイグレーションの作成
+
+スキーマを変更した場合：
+
+```bash
+# 1. src/backend/db/schema.ts を編集
+# 2. マイグレーションファイルを生成
+pnpm run drizzle-kit generate
+
+# 3. 開発DBに適用（自動）
+pnpm run dev
+```
+
+生成されたマイグレーションファイルは `resources/db/migrations/` に保存されます。
+
+#### 既存のマイグレーション
+
+- `0000_late_power_pack.sql` - 初期スキーマ（settings テーブル）
+
+### データベース操作
+
+#### Drizzle Studio で確認（開発時）
+
+ブラウザベースのデータベースビューアーを起動：
+
+```bash
+pnpm run drizzle-kit studio
+```
+
+http://localhost:4983 でデータベースの中身を確認・編集できます。
+
+#### コード内での操作
+
+**データの読み取り**:
+
+```typescript
+import { db } from '@backend/db'
+import { settings } from '@backend/db/schema'
+import { eq } from 'drizzle-orm'
+
+// 単一の設定を取得
+const result = await db
+  .select()
+  .from(settings)
+  .where(eq(settings.key, 'aiProvider'))
+  .get()
+
+console.log(result.value) // "anthropic"
+```
+
+**データの書き込み**:
+
+```typescript
+// 設定を保存（upsert）
+await db
+  .insert(settings)
+  .values({ key: 'aiProvider', value: 'anthropic' })
+  .onConflictDoUpdate({
+    target: settings.key,
+    set: { value: 'anthropic' }
+  })
+```
+
+**データの削除**:
+
+```typescript
+await db
+  .delete(settings)
+  .where(eq(settings.key, 'aiProvider'))
+```
+
+### その他のデータ保存場所
+
+アプリケーションが使用する主なデータの保存場所：
+
+```
+electron-ai-starter/
+├── tmp/                           # 開発環境のみ
+│   ├── db/app.db                  # データベース
+│   └── logs/app.log               # 統合ログ
+│
+└── (本番環境 - userData ディレクトリ)
+    ├── db/app.db                  # データベース
+    └── logs/app.log               # 統合ログ
+```
+
+### データバックアップ
+
+SQLite は単一ファイルなので、バックアップは簡単です：
+
+**開発環境**:
+```bash
+cp ./tmp/db/app.db ./tmp/db/app.db.backup
+```
+
+**本番環境**:
+1. アプリケーションを終了
+2. userData ディレクトリの `db/app.db` をコピー
+
+### データリセット
+
+**開発環境のリセット**:
+
+```bash
+# データベースを削除
+pnpm run db:reset
+
+# アプリ再起動で自動的に再作成・マイグレーション実行
+pnpm run dev
+```
+
+**本番環境のリセット**:
+
+アプリケーションをアンインストールするか、手動で userData ディレクトリを削除します。
+
+### セキュリティとプライバシー
+
+⚠️ **重要**:
+- API キーなどの機密情報は SQLite データベースに**平文**で保存されています
+- 本番環境では userData ディレクトリのパーミッションで保護されています
+- より高度なセキュリティが必要な場合は、OS のキーチェーン（macOS Keychain、Windows Credential Manager）の利用を検討してください
 
 ## デバッグ方法
 
