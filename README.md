@@ -38,46 +38,86 @@ A modern, full-featured Electron application template with TypeScript, React, Dr
 
 ## Get Started
 
-Fork & clone first, then:
+### Prerequisites
 
+- [Node.js](https://nodejs.org/) (v18 or higher recommended)
+- [pnpm](https://pnpm.io/) package manager
+
+### Installation
+
+1. Fork & clone the repository
+
+2. Install dependencies:
 ```bash
-$ cp .env.example .env.development
-$ npm install
+pnpm install
 ```
+
+3. Set up environment variables:
+```bash
+cp .env.example .env
+```
+
+The `.env` file should contain:
+```
+MAIN_VITE_USER_DATA_PATH=./tmp
+```
+
+This configures the development data directory for logs and database.
 
 ### Development
 
+Start the development server with hot reload:
+
 ```bash
-$ npm run dev
+pnpm run dev
 ```
+
+This will:
+- Build the Electron main process and backend utility process
+- Build the preload scripts
+- Start the Vite dev server for the renderer process
+- Launch the Electron application
 
 ### Add Shadcn Components
 
 ```bash
-$ npm run shadcn add [component-name]
+pnpm run shadcn add [component-name]
 ```
 
 ### Database Operations
 
 ```bash
 # Generate database migrations
-$ npm run drizzle-kit generate
+pnpm run drizzle-kit generate
 
 # Reset development database
-$ npm run db:reset
+pnpm run db:reset
 ```
 
 ### Code Quality
 
 ```bash
 # Type check
-$ npm run typecheck
+pnpm run typecheck
 
 # Format code
-$ npm run format
+pnpm run format
 
 # Lint code
-$ npm run lint
+pnpm run lint
+```
+
+### Building for Production
+
+```bash
+# Build for Windows
+pnpm run build:win
+
+# Build for macOS
+pnpm run build:mac
+
+# Build for Linux
+pnpm run build:linux
 ```
 
 ## Future Roadmap

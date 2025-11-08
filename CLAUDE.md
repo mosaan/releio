@@ -6,33 +6,33 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Core Development
 
-- `npm run dev` - Start development server with hot reload
-- `npm run build` - Build the application with TypeScript checks
-- `npm run start` - Run the built application (preview mode)
+- `pnpm run dev` - Start development server with hot reload
+- `pnpm run build` - Build the application with TypeScript checks
+- `pnpm run start` - Run the built application (preview mode)
 
 ### Code Quality
 
-- `npm run lint` - Run ESLint on the codebase
-- `npm run format` - Format code with Prettier
-- `npm run typecheck` - Run TypeScript checks for both node and web configurations
-- `npm run typecheck:node` - Check main process TypeScript
-- `npm run typecheck:web` - Check renderer process TypeScript
+- `pnpm run lint` - Run ESLint on the codebase
+- `pnpm run format` - Format code with Prettier
+- `pnpm run typecheck` - Run TypeScript checks for both node and web configurations
+- `pnpm run typecheck:node` - Check main process TypeScript
+- `pnpm run typecheck:web` - Check renderer process TypeScript
 
 ### Testing
 
-- `npm run test:backend` - Run backend process tests with Vitest
+- `pnpm run test:backend` - Run backend process tests with Vitest
 
 ### Database Operations
 
-- `npm run drizzle-kit` - Run Drizzle Kit CLI operations (generate, migrate, push, studio)
-- `npm run db:reset` - Reset development database by removing the database file
+- `pnpm run drizzle-kit` - Run Drizzle Kit CLI operations (generate, migrate, push, studio)
+- `pnpm run db:reset` - Reset development database by removing the database file
 
 ### Building Distributables
 
-- `npm run build:win` - Build Windows executable
-- `npm run build:mac` - Build macOS executable  
-- `npm run build:linux` - Build Linux executable
-- `npm run build:unpack` - Build without packaging
+- `pnpm run build:win` - Build Windows executable
+- `pnpm run build:mac` - Build macOS executable  
+- `pnpm run build:linux` - Build Linux executable
+- `pnpm run build:unpack` - Build without packaging
 
 ## Architecture
 
@@ -99,7 +99,7 @@ The following aliases are configured in `electron.vite.config.ts`:
 Use the following command to add new Shadcn components:
 
 ```bash
-npm run shadcn add [component-name]
+pnpm run shadcn add [component-name]
 ```
 
 The configuration uses New York style with Lucide icons and neutral base color.
@@ -113,8 +113,8 @@ The configuration uses New York style with Lucide icons and neutral base color.
 - **Migrations**: Located in `resources/db/migrations/` (included in build)
 - **Type-safe**: Full Drizzle ORM integration with TypeScript types
 - **Database commands**:
-  - `npm run drizzle-kit` - Drizzle Kit operations (generate, migrate, push, studio)
-  - `npm run db:reset` - Reset development database
+  - `pnpm run drizzle-kit` - Drizzle Kit operations (generate, migrate, push, studio)
+  - `pnpm run db:reset` - Reset development database
 
 ### AI Integration
 
@@ -194,6 +194,32 @@ The configuration uses New York style with Lucide icons and neutral base color.
 - `eslint` - Code linting
 - `prettier` - Code formatting
 - `electron-builder` - Application packaging
+
+## Documentation Guidelines
+
+### Diagrams and Visualizations
+
+When creating or updating documentation that requires diagrams, flowcharts, or visualizations:
+
+- **Primary choice**: Use **Mermaid** syntax within Markdown code blocks
+- **Why Mermaid**:
+  - Native support in GitHub, GitLab, and VSCode Markdown preview
+  - Text-based and version control friendly
+  - Supports multiple diagram types (flowcharts, sequence diagrams, state diagrams, etc.)
+  - Easy to maintain and update
+
+**Example**:
+
+```markdown
+```mermaid
+graph TB
+    A[Start] --> B[Process]
+    B --> C[End]
+```
+```
+
+- See `docs/FOR_DEVELOPERS.md` for examples of architecture diagrams and sequence diagrams
+- For complex UML diagrams, PlantUML is an acceptable alternative (requires additional tooling)
 
 ## Commit Guidelines
 
