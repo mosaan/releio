@@ -34,8 +34,8 @@ class BackendLogger {
       timestamp: new Date().toISOString()
     }
 
-    // Send to Main Process via IPC
-    if (process.send) {
+    // Send to Main Process via IPC (skip in test environment)
+    if (process.send && process.env.VITEST !== 'true') {
       process.send({
         type: 'log',
         payload: logEntry
