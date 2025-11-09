@@ -34,7 +34,16 @@ vi.mock('../../src/backend/logger', () => ({
   }
 }))
 
-// Mock win-ca module
+// Mock Windows certificate module
+vi.mock('../../src/backend/platform/windows/certificate', () => ({
+  getWindowsCertificateSettings: vi.fn(async () => ({
+    mode: 'system' as const,
+    customCertificates: [MOCK_CERT_1, MOCK_CERT_2],
+    rejectUnauthorized: true
+  }))
+}))
+
+// Mock win-ca module (for potential direct imports)
 vi.mock('win-ca', () => ({
   default: {
     inject: vi.fn((_mode: string, callback: (error: Error | null, cert: string | null) => void) => {
