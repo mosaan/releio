@@ -1,7 +1,6 @@
 import { drizzle } from 'drizzle-orm/libsql'
 import { createClient } from '@libsql/client'
 import { beforeEach } from 'vitest'
-import { sql } from 'drizzle-orm'
 
 /**
  * Creates a fresh in-memory test database with schema setup
@@ -10,18 +9,15 @@ export async function createTestDatabase(): Promise<ReturnType<typeof drizzle>> 
   // Create in-memory libSQL database
   const client = createClient({ url: ':memory:' })
 
-  // Create Drizzle instance
-  const testDb = drizzle({ client })
-
-  // Create tables directly for testing (more reliable than migrations in test env)
-  await testDb.run(sql`
+  // Create tables directly using the libSQL client
+  await client.execute(`
     CREATE TABLE IF NOT EXISTS settings (
       "key" TEXT PRIMARY KEY NOT NULL,
       "value" TEXT NOT NULL
     )
   `)
 
-  await testDb.run(sql`
+  await client.execute(`
     CREATE TABLE IF NOT EXISTS mcp_servers (
       id TEXT PRIMARY KEY NOT NULL,
       name TEXT NOT NULL,
@@ -35,6 +31,9 @@ export async function createTestDatabase(): Promise<ReturnType<typeof drizzle>> 
       updated_at INTEGER NOT NULL
     )
   `)
+
+  // Create Drizzle instance after tables are created
+  const testDb = drizzle({ client })
 
   return testDb
 }
