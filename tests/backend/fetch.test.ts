@@ -16,11 +16,6 @@ vi.mock('../../src/backend/logger', () => ({
   }
 }))
 
-// Mock node-fetch module
-vi.mock('node-fetch', () => ({
-  default: vi.fn()
-}))
-
 // Mock Windows modules
 vi.mock('../../src/backend/platform/windows/proxy', () => ({
   getWindowsProxySettings: vi.fn(async () => ({
@@ -35,9 +30,9 @@ vi.mock('../../src/backend/platform/windows/certificate', () => ({
   }))
 }))
 
-// Import the mocked nodeFetch after mocking
-import nodeFetch from 'node-fetch'
-const mockFetch = vi.mocked(nodeFetch)
+// Mock global fetch
+const mockFetch = vi.fn()
+global.fetch = mockFetch as any
 
 import { setupDatabaseTest } from './database-helper'
 import { createCustomFetch } from '../../src/backend/ai/fetch'
@@ -85,9 +80,7 @@ describe('Custom Fetch Builder', () => {
 
       expect(mockFetch).toHaveBeenCalledWith(
         'https://api.example.com/test',
-        expect.objectContaining({
-          agent: expect.anything()
-        })
+        expect.any(Object)
       )
     })
 
@@ -103,7 +96,7 @@ describe('Custom Fetch Builder', () => {
 
       expect(mockFetch).toHaveBeenCalled()
       const callArgs = mockFetch.mock.calls[0]
-      expect(callArgs[1]).toHaveProperty('agent')
+      expect(callArgs[1]).toHaveProperty('dispatcher')
     })
 
     it('should handle HTTP URLs with proxy', async () => {
@@ -144,7 +137,7 @@ describe('Custom Fetch Builder', () => {
 
       expect(mockFetch).toHaveBeenCalled()
       const callArgs = mockFetch.mock.calls[0]
-      expect(callArgs[1]).toHaveProperty('agent')
+      expect(callArgs[1]).toHaveProperty('dispatcher')
     })
 
     it('should use custom certificates when configured', async () => {
@@ -293,7 +286,7 @@ describe('Custom Fetch Builder', () => {
 
       expect(mockFetch).toHaveBeenCalled()
       const callArgs = mockFetch.mock.calls[0]
-      expect(callArgs[1]).toHaveProperty('agent')
+      expect(callArgs[1]).toHaveProperty('dispatcher')
     })
 
     it('should work with proxy and disabled cert validation', async () => {

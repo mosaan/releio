@@ -38,9 +38,9 @@ importers:
       https-proxy-agent:
         specifier: ^7.0.6
         version: 7.0.6
-      node-fetch:
-        specifier: ^3.3.2
-        version: 3.3.2
+      undici:
+        specifier: ^7.16.0
+        version: 7.16.0
       win-ca:
         specifier: ^3.5.1
         version: 3.5.1
@@ -102,9 +102,6 @@ importers:
       '@types/node':
         specifier: ^22.14.1
         version: 22.19.0
-      '@types/node-fetch':
-        specifier: ^2.6.13
-        version: 2.6.13
       '@types/react':
         specifier: ^19.1.1
         version: 19.2.2
@@ -1585,9 +1582,6 @@ packages:
 
   '@types/ms@2.1.0':
     resolution: {integrity: sha512-GsCCIZDE/p3i96vtEqx+7dBUGXrc7zeSK3wwPHIaRThS+9OhWIXRqzs4d6k1SVU8g91DrNRWxWUGhp5KXQb2VA==}
-
-  '@types/node-fetch@2.6.13':
-    resolution: {integrity: sha512-QGpRVpzSaUs30JBSGPjOg4Uveu384erbHBoT1zeONvyCfwQxIkUshLAOqN/k9EjGviPRmWTTe6aH2qySWKTVSw==}
 
   '@types/node@22.19.0':
     resolution: {integrity: sha512-xpr/lmLPQEj+TUnHmR+Ab91/glhJvsqcjB+yY0Ix9GO70H6Lb4FHH5GeqdOE5btAx7eIMwuHkp4H2MSkLcqWbA==}
@@ -4433,6 +4427,10 @@ packages:
   undici-types@6.21.0:
     resolution: {integrity: sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ==}
 
+  undici@7.16.0:
+    resolution: {integrity: sha512-QEg3HPMll0o3t2ourKwOeUAZ159Kn9mx5pnzHRQO8+Wixmh88YdZRiIwat0iNzNNXn0yoEtXJqFpyW7eM8BV7g==}
+    engines: {node: '>=20.18.1'}
+
   unified@11.0.5:
     resolution: {integrity: sha512-xKvGhPWw3k84Qjh8bI3ZeJjqnyadK+GEFtazSfZv/rKeTkTjOJho6mFqh2SM96iIcZokxiOpg78GazTSg8+KHA==}
 
@@ -6012,11 +6010,6 @@ snapshots:
       '@types/unist': 3.0.3
 
   '@types/ms@2.1.0': {}
-
-  '@types/node-fetch@2.6.13':
-    dependencies:
-      '@types/node': 22.19.0
-      form-data: 4.0.4
 
   '@types/node@22.19.0':
     dependencies:
@@ -9526,6 +9519,8 @@ snapshots:
       which-boxed-primitive: 1.1.1
 
   undici-types@6.21.0: {}
+
+  undici@7.16.0: {}
 
   unified@11.0.5:
     dependencies:
