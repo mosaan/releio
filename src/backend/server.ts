@@ -4,6 +4,7 @@ import type { BackendMainAPI } from '@common/types'
 import { Handler } from './handler'
 import logger from './logger'
 import { db, runMigrations, ensureConnection } from './db'
+import { mcpManager } from './mcp'
 
 /**
  * This class encapsulate the main logic of the backend thread.
@@ -23,6 +24,9 @@ export class Server {
   async init(): Promise<void> {
     await ensureConnection(db)
     await runMigrations(db)
+
+    // Initialize MCP Manager - auto-starts enabled servers
+    await mcpManager.initialize()
   }
 
   /**

@@ -98,9 +98,65 @@ export interface RendererBackendAPI {
   abortAIText: (sessionId: string) => Promise<Result<void>>
   getAIModels: (provider: AIProvider) => Promise<Result<string[]>>
   testAIProviderConnection: (config: AIConfig) => Promise<Result<boolean>>
+  // MCP Server Management
+  listMCPServers: () => Promise<Result<MCPServerConfig[]>>
+  addMCPServer: (config: Omit<MCPServerConfig, 'id' | 'createdAt' | 'updatedAt'>) => Promise<Result<string>>
+  updateMCPServer: (serverId: string, updates: Partial<MCPServerConfig>) => Promise<Result<void>>
+  removeMCPServer: (serverId: string) => Promise<Result<void>>
+  getMCPResources: (serverId: string) => Promise<Result<MCPResource[]>>
+  getMCPTools: (serverId: string) => Promise<Result<MCPTool[]>>
+  getMCPPrompts: (serverId: string) => Promise<Result<MCPPrompt[]>>
+  callMCPTool: (serverId: string, toolName: string, args: unknown) => Promise<Result<unknown>>
 }
 
 export interface RendererMainAPI {
   ping: () => Promise<Result<string>>
   openFolder: (folderPath: string) => Promise<Result<void>>
+}
+
+// MCP Server Configuration
+export interface MCPServerConfig {
+  id: string
+  name: string
+  description?: string
+  command: string
+  args: string[]
+  env?: Record<string, string>
+  enabled: boolean           // Server will be automatically started when enabled
+  includeResources: boolean  // Include resources as tools (default: false)
+  createdAt: Date
+  updatedAt: Date
+}
+
+// MCP Server Status
+export interface MCPServerStatus {
+  serverId: string
+  status: 'connected' | 'stopped' | 'error'
+  error?: string
+}
+
+// MCP Resource (read-only data)
+export interface MCPResource {
+  uri: string
+  name: string
+  description?: string
+  mimeType?: string
+}
+
+// MCP Tool (AI-executable action)
+export interface MCPTool {
+  name: string
+  description?: string
+  inputSchema: object  // JSON Schema
+}
+
+// MCP Prompt (reusable prompt template)
+export interface MCPPrompt {
+  name: string
+  description?: string
+  arguments?: Array<{
+    name: string
+    description?: string
+    required?: boolean
+  }>
 }

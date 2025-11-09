@@ -1,5 +1,5 @@
 import { Connection } from '@common/connection'
-import type { Result, AIProvider, AIConfig, AISettings, AIMessage, AppEvent } from '@common/types'
+import type { Result, AIProvider, AIConfig, AISettings, AIMessage, AppEvent, MCPServerConfig, MCPResource, MCPTool, MCPPrompt } from '@common/types'
 import { ok } from '@common/result'
 import { dirname } from 'path'
 import { getSetting, setSetting, getAllSettings, clearSetting } from './settings'
@@ -8,6 +8,7 @@ import logger from './logger'
 import { streamText, abortStream, listAvailableModel, testConnection } from './ai'
 import { FACTORY } from './ai/factory'
 import { close, db, destroy } from './db'
+import { mcpManager } from './mcp'
 
 export class Handler {
   private _rendererConnection: Connection
@@ -113,5 +114,47 @@ export class Handler {
   async testAIProviderConnection(config: AIConfig): Promise<Result<boolean>> {
     const result = await testConnection(config)
     return ok(result)
+  }
+
+  // MCP Server Management handlers
+  async listMCPServers(): Promise<Result<MCPServerConfig[], string>> {
+    return await mcpManager.listServers()
+  }
+
+  async addMCPServer(
+    config: Omit<MCPServerConfig, 'id' | 'createdAt' | 'updatedAt'>
+  ): Promise<Result<string, string>> {
+    return await mcpManager.addServer(config)
+  }
+
+  async updateMCPServer(
+    serverId: string,
+    updates: Partial<MCPServerConfig>
+  ): Promise<Result<void, string>> {
+    return await mcpManager.updateServer(serverId, updates)
+  }
+
+  async removeMCPServer(serverId: string): Promise<Result<void, string>> {
+    return await mcpManager.removeServer(serverId)
+  }
+
+  async getMCPResources(serverId: string): Promise<Result<MCPResource[], string>> {
+    return await mcpManager.listResources(serverId)
+  }
+
+  async getMCPTools(serverId: string): Promise<Result<MCPTool[], string>> {
+    return await mcpManager.listTools(serverId)
+  }
+
+  async getMCPPrompts(serverId: string): Promise<Result<MCPPrompt[], string>> {
+    return await mcpManager.listPrompts(serverId)
+  }
+
+  async callMCPTool(
+    serverId: string,
+    toolName: string,
+    args: unknown
+  ): Promise<Result<unknown, string>> {
+    return await mcpManager.callTool(serverId, toolName, args)
   }
 }

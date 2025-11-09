@@ -24,6 +24,15 @@ export class Server {
     abortAIText: (...args) => this._invoke('abortAIText', ...args),
     getAIModels: (...args) => this._invoke('getAIModels', ...args),
     testAIProviderConnection: (...args) => this._invoke('testAIProviderConnection', ...args),
+    // MCP Server Management
+    listMCPServers: (...args) => this._invoke('listMCPServers', ...args),
+    addMCPServer: (...args) => this._invoke('addMCPServer', ...args),
+    updateMCPServer: (...args) => this._invoke('updateMCPServer', ...args),
+    removeMCPServer: (...args) => this._invoke('removeMCPServer', ...args),
+    getMCPResources: (...args) => this._invoke('getMCPResources', ...args),
+    getMCPTools: (...args) => this._invoke('getMCPTools', ...args),
+    getMCPPrompts: (...args) => this._invoke('getMCPPrompts', ...args),
+    callMCPTool: (...args) => this._invoke('callMCPTool', ...args),
     onEvent: (channel: string, callback: (appEvent: AppEvent) => void) => {
       this._backendConnection!.onEvent(channel, callback)
     },

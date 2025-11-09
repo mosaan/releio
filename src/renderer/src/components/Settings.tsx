@@ -12,6 +12,7 @@ import {
   CardFooter
 } from '@renderer/components/ui/card'
 import { AISettings } from './AISettings'
+import { MCPSettings } from './MCPSettings'
 
 interface SettingsProps {
   onBack: () => void
@@ -149,6 +150,8 @@ export function Settings({ onBack }: SettingsProps): React.JSX.Element {
           </Card>
 
           <AISettings className="shadow-sm" />
+
+          <MCPSettings className="shadow-sm" />
 
           <Card className="shadow-sm">
             <CardHeader>
