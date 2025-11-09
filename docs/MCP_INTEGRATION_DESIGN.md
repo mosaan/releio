@@ -1046,10 +1046,11 @@ const client = experimental_createMCPClient({
 ---
 
 **更新日**: 2025-11-09
-**バージョン**: 2.3
-**ステータス**: Draft (設計中)
+**承認日**: 2025-11-09
+**バージョン**: 2.3 (Final)
+**ステータス**: ✅ Approved (承認済み - 実装可能)
 **変更履歴**:
-- v2.3: MCP サーバーのライフサイクル設計を明確化、`autoConnect` フィールドを削除し `enabled` のみで管理
+- v2.3: MCP サーバーのライフサイクル設計を明確化、`autoConnect` フィールドを削除し `enabled` のみで管理 → **承認済み**
 - v2.2: フェーズ 2 を Tools に集中、Prompts サポートをフェーズ 4（将来の拡張）に移動
 - v2.1: `includeResources` をサーバーごとの設定に変更（MCPServerConfig に配置）
 - v2.0: AI SDK の MCP サポートを反映した設計に変更（`experimental_createMCPClient` 使用）
