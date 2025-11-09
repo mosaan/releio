@@ -36,7 +36,7 @@ graph TB
     Main -->|IPC| Renderer
 ```
 
-### 現在の AI 統合アーキテクチャ
+### 現在の AI プロバイダー統合
 
 現在、以下の AI プロバイダーに対応しています：
 
@@ -46,9 +46,11 @@ graph TB
 
 **統合方法**:
 - `src/backend/ai/factory.ts` でプロバイダー管理
-- Vercel AI SDK を使用
+- **Vercel AI SDK (`ai` パッケージ v4.3.17)** を使用
 - 各プロバイダーの API を直接呼び出し
-- ストリーミング対応
+- `streamText()` によるストリーミング対応
+
+**重要**: AI SDK v4.2+ は **MCP を公式サポート**しており、`experimental_createMCPClient` API が利用可能です。
 
 ### IPC 通信の特徴
 
@@ -94,7 +96,43 @@ graph LR
 MCP は複数のトランスポート方式をサポートしています：
 
 - **stdio**: 標準入出力を使ったローカルプロセス通信
-- **HTTP**: リモートサーバーとの通信
+- **HTTP/SSE**: リモートサーバーとの通信（Streamable HTTP）
+
+### Vercel AI SDK の MCP サポート
+
+**重要な発見**: 本プロジェクトが既に使用している **Vercel AI SDK (v4.2+) は MCP を公式サポート**しています。
+
+**サポート機能**:
+- ✅ **Tools**: 完全サポート（自動変換）
+- ✅ **Resources**: 完全サポート（`listResources()`, `readResource()`, `includeResources` オプション）
+- ✅ **Prompts**: 完全サポート（`listPrompts()`）
+- ✅ **stdio transport**: ローカルサーバー用
+- ✅ **HTTP/SSE transport**: リモートサーバー用（本番推奨）
+
+**主要 API**:
+```typescript
+import { experimental_createMCPClient } from 'ai'
+
+const mcpClient = experimental_createMCPClient({
+  transport: {
+    type: 'stdio',
+    command: 'node',
+    args: ['path/to/server.js']
+  }
+})
+
+// Tools を取得して streamText() に渡せる
+const tools = await mcpClient.getTools()
+
+// Resources も includeResources: true でツール化可能
+const resourceTools = await mcpClient.getTools({ includeResources: true })
+```
+
+**メリット**:
+- `@modelcontextprotocol/sdk` を直接使用する必要がない
+- AI SDK との統合がシームレス
+- 型安全性が保証される
+- Vercel が継続的にメンテナンス
 
 ---
 
@@ -117,7 +155,7 @@ MCP は複数のトランスポート方式をサポートしています：
 - ✅ 既存 AI 統合との連携
 
 **含まれないもの (将来の拡張)**:
-- ❌ HTTP トランスポート（リモートサーバー）
+- ⏳ HTTP/SSE トランスポート（リモートサーバー）※ AI SDK はサポート済み
 - ❌ MCP サーバーの自動検出
 - ❌ カスタム MCP サーバーの開発サポート
 
@@ -136,8 +174,8 @@ graph TB
 
     subgraph "Backend Process"
         MCPManager[MCP Manager<br/>接続管理]
-        MCPClient[MCP Client<br/>@modelcontextprotocol/sdk]
-        AIHandler[AI Handler<br/>既存 AI 統合]
+        AISDK[AI SDK<br/>experimental_createMCPClient]
+        AIHandler[AI Handler<br/>streamText統合]
         DB[(Database<br/>設定保存)]
     end
 
@@ -150,11 +188,12 @@ graph TB
     UI -->|IPC| MCPManager
     Chat -->|IPC| AIHandler
     MCPManager --> DB
-    MCPManager --> MCPClient
-    MCPClient -->|stdio| Server1
-    MCPClient -->|stdio| Server2
-    MCPClient -->|stdio| Server3
-    AIHandler -.->|コンテキスト取得| MCPManager
+    MCPManager --> AISDK
+    AISDK -->|stdio| Server1
+    AISDK -->|stdio| Server2
+    AISDK -->|stdio| Server3
+    AIHandler -->|getTools()| MCPManager
+    AIHandler -->|tools渡し| AISDK
 ```
 
 ### プロセス配置の方針
@@ -197,10 +236,9 @@ src/
 ├── backend/
 │   ├── mcp/
 │   │   ├── index.ts              # MCP マネージャー公開 API
-│   │   ├── manager.ts            # MCP マネージャー本体
-│   │   ├── client-wrapper.ts    # MCP Client のラッパー
+│   │   ├── manager.ts            # MCP マネージャー本体（AI SDK使用）
 │   │   ├── server-config.ts     # サーバー設定管理
-│   │   └── types.ts             # MCP 関連の型定義
+│   │   └── types.ts             # MCP 関連の型定義（AI SDK型の再エクスポート）
 │   ├── handler.ts               # ← MCP メソッドを追加
 │   └── ...
 ├── common/
@@ -214,61 +252,91 @@ src/
 └── ...
 ```
 
+**注**: `client-wrapper.ts` は不要です。AI SDK の `experimental_createMCPClient` を直接使用します。
+
 ### 主要コンポーネント
 
 #### 1. MCP Manager (`src/backend/mcp/manager.ts`)
 
 **責務**:
-- MCP サーバーへの接続・切断管理
+- MCP サーバーへの接続・切断管理（AI SDK の `experimental_createMCPClient` 使用）
 - 複数サーバーの並行管理
 - サーバー設定の読み込み・保存
 - クライアントインスタンスのライフサイクル管理
 
-**主要メソッド**:
+**実装例**:
 ```typescript
+import { experimental_createMCPClient } from 'ai'
+
 class MCPManager {
-  // サーバー接続
-  async connect(serverId: string): Promise<Result<void>>
+  private clients: Map<string, ReturnType<typeof experimental_createMCPClient>> = new Map()
 
-  // サーバー切断
-  async disconnect(serverId: string): Promise<Result<void>>
+  async connect(serverId: string, config: MCPServerConfig): Promise<Result<void>> {
+    const client = experimental_createMCPClient({
+      transport: {
+        type: 'stdio',
+        command: config.command,
+        args: config.args,
+        env: config.env
+      }
+    })
 
-  // リソース取得
-  async listResources(serverId: string): Promise<Result<MCPResource[]>>
+    this.clients.set(serverId, client)
+    return ok(undefined)
+  }
 
-  // ツール取得
-  async listTools(serverId: string): Promise<Result<MCPTool[]>>
+  async disconnect(serverId: string): Promise<Result<void>> {
+    const client = this.clients.get(serverId)
+    if (client) {
+      // クライアントのクリーンアップ
+      this.clients.delete(serverId)
+    }
+    return ok(undefined)
+  }
 
-  // プロンプト取得
-  async listPrompts(serverId: string): Promise<Result<MCPPrompt[]>>
+  async listResources(serverId: string): Promise<Result<MCPResource[]>> {
+    const client = this.clients.get(serverId)
+    if (!client) return error('Server not connected')
 
-  // ツール実行
-  async callTool(serverId: string, toolName: string, args: unknown): Promise<Result<unknown>>
+    const resources = await client.listResources()
+    return ok(resources)
+  }
+
+  async getTools(serverId: string, includeResources = false): Promise<Result<MCPTool[]>> {
+    const client = this.clients.get(serverId)
+    if (!client) return error('Server not connected')
+
+    const tools = await client.getTools({ includeResources })
+    return ok(tools)
+  }
+
+  async listPrompts(serverId: string): Promise<Result<MCPPrompt[]>> {
+    const client = this.clients.get(serverId)
+    if (!client) return error('Server not connected')
+
+    const prompts = await client.listPrompts()
+    return ok(prompts)
+  }
+
+  // AI統合用: 全サーバーのツールを取得
+  async getAllTools(includeResources = false): Promise<MCPTool[]> {
+    const allTools: MCPTool[] = []
+    for (const [_serverId, client] of this.clients) {
+      const tools = await client.getTools({ includeResources })
+      allTools.push(...tools)
+    }
+    return allTools
+  }
 }
 ```
 
-#### 2. MCP Client Wrapper (`src/backend/mcp/client-wrapper.ts`)
+**重要なポイント**:
+- `@modelcontextprotocol/sdk` は使用しない
+- AI SDK の型定義をそのまま利用（型変換不要）
+- `getTools({ includeResources: true })` で Resources もツールとして扱える
+- `streamText()` に直接渡せる形式でツールを取得
 
-**責務**:
-- `@modelcontextprotocol/sdk` の Client クラスをラップ
-- エラーハンドリング
-- 型変換（SDK 型 → プロジェクト型）
-
-```typescript
-class MCPClientWrapper {
-  private client: Client
-  private transport: StdioClientTransport
-
-  async connect(command: string, args: string[]): Promise<void>
-  async disconnect(): Promise<void>
-  async listResources(): Promise<MCPResource[]>
-  async listTools(): Promise<MCPTool[]>
-  async listPrompts(): Promise<MCPPrompt[]>
-  async callTool(name: string, args: unknown): Promise<unknown>
-}
-```
-
-#### 3. Handler 拡張 (`src/backend/handler.ts`)
+#### 2. Handler 拡張 (`src/backend/handler.ts`)
 
 既存の `Handler` クラスに MCP メソッドを追加します。
 
@@ -642,18 +710,24 @@ API キーなどの機密情報が環境変数に含まれる可能性があり�
 **目標**: 単一の MCP サーバーに接続し、リソース一覧を取得できる
 
 **タスク**:
-1. `@modelcontextprotocol/sdk` のインストール
+1. ~~`@modelcontextprotocol/sdk` のインストール~~ → **不要**（AI SDK v4.3.17 に含まれる）
 2. データベーススキーマの追加とマイグレーション
-3. `MCPClientWrapper` の実装
-4. `MCPManager` の基本実装 (connect/disconnect/listResources)
-5. Handler への MCP メソッド追加
-6. Renderer 側 API の実装
-7. Settings UI の基本実装（サーバー追加・一覧表示）
+3. `MCPManager` の基本実装（`experimental_createMCPClient` 使用）
+   - `connect()`, `disconnect()`, `listResources()`
+4. Handler への MCP メソッド追加
+5. `src/common/types.ts` への型定義追加
+6. Renderer 側 API の実装（`window.backend.*` 経由）
+7. Settings UI の基本実装（サーバー追加・一覧表示・接続）
 
 **成功基準**:
 - ✅ MCP サーバーを設定画面から追加できる
-- ✅ サーバーに接続できる
+- ✅ サーバーに接続できる（AI SDK の `experimental_createMCPClient` 経由）
 - ✅ リソース一覧を取得・表示できる
+
+**実装の簡素化**:
+- `MCPClientWrapper` の実装は不要
+- 型変換ロジックも不要（AI SDK の型をそのまま使用）
+- 低レベルの MCP プロトコル処理は AI SDK が担当
 
 ### フェーズ 2: 機能拡張
 
@@ -677,19 +751,43 @@ API キーなどの機密情報が環境変数に含まれる可能性があり�
 **目標**: AI チャットから MCP リソースやツールを利用できる
 
 **タスク**:
-1. AI チャット時に MCP コンテキストを自動的に含める
-2. AI が MCP ツールを呼び出せるようにする
-3. チャット UI でのツール実行結果の表示
+1. `MCPManager.getAllTools()` の実装（全サーバーのツールを集約）
+2. `streamAIText()` に MCP ツールを渡す実装
+   ```typescript
+   // src/backend/handler.ts
+   async streamAIText(messages: AIMessage[]): Promise<Result<string>> {
+     // 既存のAI設定取得...
+
+     // MCP ツールを取得
+     const mcpTools = await this._mcpManager.getAllTools({ includeResources: true })
+
+     // streamText() に渡す
+     const sessionId = await streamText(
+       config,
+       messages,
+       mcpTools,  // ← MCP ツールを追加
+       (channel, event) => this._rendererConnection.publishEvent(channel, event)
+     )
+
+     return ok(sessionId)
+   }
+   ```
+3. チャット UI でのツール実行結果の表示（Assistant UI が対応）
 4. プロンプトテンプレートの活用
 
 **成功基準**:
-- ✅ AI がファイル内容を読み取れる (MCP リソース経由)
-- ✅ AI がツールを実行できる (MCP ツール経由)
+- ✅ AI がファイル内容を読み取れる（MCP Resources をツール化して利用）
+- ✅ AI がツールを実行できる（MCP Tools を `streamText()` に渡すだけ）
 - ✅ ユーザーがツール実行を確認・承認できる
+
+**AI SDK による簡素化**:
+- MCP Tools は AI SDK のツール形式に自動変換される
+- `streamText()` の `tools` パラメータに直接渡せる
+- ツール実行のハンドリングも AI SDK が担当
 
 ### フェーズ 4: 高度な機能 (将来の拡張)
 
-- HTTP トランスポートのサポート
+- **HTTP/SSE トランスポートのサポート**（AI SDK は既にサポート済み）
 - MCP サーバーの自動検出
 - カスタムサーバー開発サポート
 - パフォーマンス最適化
@@ -699,14 +797,33 @@ API キーなどの機密情報が環境変数に含まれる可能性があり�
 
 ## 今後の拡張性
 
-### 1. HTTP トランスポートのサポート
+### 1. HTTP/SSE トランスポートのサポート
 
 リモート MCP サーバーへの接続を可能にします。
 
 **変更点**:
 - `MCPServerConfig` に `transport: 'stdio' | 'http'` フィールドを追加
-- HTTP クライアントの実装
-- 認証機能の追加
+- HTTP トランスポート設定の UI 追加
+- 認証機能の追加（API キーなど）
+
+**実装例**:
+```typescript
+// AI SDK は既に HTTP トランスポートをサポート
+const client = experimental_createMCPClient({
+  transport: {
+    type: 'http',  // または 'sse'
+    url: 'https://api.example.com/mcp',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`
+    }
+  }
+})
+```
+
+**メリット**:
+- Vercel など本番環境へのデプロイが可能
+- クラウドホストされた MCP サーバーへのアクセス
+- AI SDK が既にサポート済みなので実装が容易
 
 ### 2. MCP サーバーマーケットプレイス
 
@@ -754,14 +871,28 @@ API キーなどの機密情報が環境変数に含まれる可能性があり�
 
 ## 参考資料
 
+### MCP 公式リソース
 - [Model Context Protocol - 公式サイト](https://modelcontextprotocol.io)
 - [MCP TypeScript SDK - GitHub](https://github.com/modelcontextprotocol/typescript-sdk)
 - [MCP Servers - GitHub](https://github.com/modelcontextprotocol/servers)
 - [Anthropic MCP ドキュメント](https://docs.anthropic.com/en/docs/agents-and-tools/mcp)
-- [本プロジェクトのドキュメント](./FOR_DEVELOPERS.md)
+
+### Vercel AI SDK（本プロジェクトで使用）
+- [AI SDK - MCP Tools ドキュメント](https://ai-sdk.dev/docs/ai-sdk-core/mcp-tools)
+- [AI SDK - experimental_createMCPClient API リファレンス](https://ai-sdk.dev/docs/reference/ai-sdk-core/create-mcp-client)
+- [AI SDK - Node.js MCP クックブック](https://ai-sdk.dev/cookbook/node/mcp-tools)
+- [AI SDK 4.2 リリースノート](https://vercel.com/blog/ai-sdk-4-2)
+
+### 本プロジェクト
+- [開発者向けドキュメント](./FOR_DEVELOPERS.md)
+- [IPC 通信の詳細解説](./IPC_COMMUNICATION_DEEP_DIVE.md)
+- [AI プロバイダー拡張ガイド](./EXTENDING_AI_PROVIDERS.md)
 
 ---
 
 **更新日**: 2025-11-09
-**バージョン**: 1.0
+**バージョン**: 2.0
 **ステータス**: Draft (設計中)
+**変更履歴**:
+- v2.0: AI SDK の MCP サポートを反映した設計に変更（`experimental_createMCPClient` 使用）
+- v1.0: 初版（`@modelcontextprotocol/sdk` 直接使用）
