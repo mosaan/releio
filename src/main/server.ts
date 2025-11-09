@@ -1,6 +1,5 @@
 import { ipcMain, BrowserWindow, shell } from 'electron'
 import { join } from 'path'
-import { is } from '@electron-toolkit/utils'
 import icon from '@resources/icon.png?asset'
 import { Handler } from './handler'
 import { Backend } from './backend'
@@ -52,7 +51,7 @@ export class Server {
 
     // HMR for renderer base on electron-vite cli.
     // Load the remote URL for development or the local html file for production.
-    if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+    if (process.env.NODE_ENV === 'development' && process.env['ELECTRON_RENDERER_URL']) {
       this._mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
     } else {
       this._mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
