@@ -249,9 +249,10 @@ bootstrap()
 
 | パッケージ | 最終更新 | 機能 | 推奨度 |
 |-----------|---------|------|--------|
-| `get-proxy-settings` | 5年前 | レジストリ読み取り、環境変数 | ❌ 古い |
-| `get-windows-proxy` | 比較的新しい | レジストリ直接読み取り | ✅ 推奨 |
-| `windows-system-proxy` | 積極的メンテナンス | HTTP Toolkit製 | ✅✅ 最推奨 |
+| `get-proxy-settings` | 5年前 | レジストリ読み取り、環境変数 | ❌ 古い（非推奨） |
+| `get-windows-proxy` | - | レジストリ直接読み取り | ❌ `@cypress/*`に移行済み |
+| `@cypress/get-windows-proxy` | 積極的メンテナンス | Cypress製、レジストリ読み取り | ✅✅ 最推奨 |
+| `windows-system-proxy` | 4年前 | HTTP Toolkit製 | ⚠️ 非アクティブ（週80DL） |
 
 **レジストリキー**:
 ```
@@ -416,10 +417,11 @@ const model = createOpenAI({ apiKey, fetch: customFetch })(modelName)
 
 #### Windowsシステム設定取得
 
-**プロキシ**: `windows-system-proxy`
-- HTTP Toolkit製、積極的にメンテナンス
-- TypeScript対応
-- PAC ファイル解析機能
+**プロキシ**: `@cypress/get-windows-proxy`
+- Cypress製、積極的にメンテナンス
+- レジストリから設定を読み取り
+- HTTP_PROXY/NO_PROXY互換形式で返す
+- MIT ライセンス
 
 **証明書**: `win-ca`
 - 広く使われている
@@ -498,7 +500,7 @@ graph TB
     Settings[Settings Manager<br/>src/backend/settings/proxy.ts] -->|設定読み取り| DB[(Database)]
 
     subgraph "Platform Layer"
-        WinProxy[Windows Proxy Reader<br/>windows-system-proxy]
+        WinProxy[Windows Proxy Reader<br/>@cypress/get-windows-proxy]
         WinCert[Windows Cert Reader<br/>win-ca]
     end
 
@@ -553,13 +555,13 @@ src/renderer/src/
 1. **依存関係追加**
    ```bash
    pnpm add https-proxy-agent node-fetch
-   pnpm add windows-system-proxy win-ca
+   pnpm add @cypress/get-windows-proxy win-ca
    pnpm add -D @types/node-fetch
    ```
 
 2. **プラットフォーム層実装**
    - `src/backend/platform/windows/proxy.ts`
-     - `windows-system-proxy`を使用
+     - `@cypress/get-windows-proxy`を使用
      - プロキシ設定取得関数
    - `src/backend/platform/windows/certificate.ts`
      - `win-ca`を使用
@@ -739,7 +741,7 @@ src/renderer/src/
 ### NPMパッケージ
 
 - [https-proxy-agent](https://www.npmjs.com/package/https-proxy-agent)
-- [windows-system-proxy](https://www.npmjs.com/package/windows-system-proxy)
+- [@cypress/get-windows-proxy](https://www.npmjs.com/package/@cypress/get-windows-proxy)
 - [win-ca](https://www.npmjs.com/package/win-ca)
 - [global-agent](https://www.npmjs.com/package/global-agent)
 - [undici](https://www.npmjs.com/package/undici)
@@ -824,35 +826,29 @@ export function createCustomFetch(
 
 ```typescript
 // src/backend/platform/windows/proxy.ts
-import { getProxySettings } from 'windows-system-proxy'
+import getWindowsProxy from '@cypress/get-windows-proxy'
+import logger from '../../logger'
 
 export async function getWindowsProxySettings(): Promise<{
   url: string | null
   bypass: string[]
 } | null> {
   try {
-    const settings = await getProxySettings()
+    const proxy = await getWindowsProxy()
 
-    if (!settings || !settings.enabled) {
+    if (!proxy) {
+      logger.info('No Windows proxy settings found')
       return null
     }
 
-    // PAC ファイルの場合
-    if (settings.pac) {
-      // TODO: PAC ファイル解析（将来対応）
-      logger.warn('PAC file proxy not yet supported')
-      return null
-    }
+    // ProxyEnable が 1 の場合のみプロキシが有効
+    // ProxyServer: "proxy.example.com:8080"
+    // ProxyOverride: "<local>;*.example.com"
 
-    // 固定プロキシ
-    if (settings.proxy) {
-      return {
-        url: `http://${settings.proxy}`,
-        bypass: settings.bypass || []
-      }
+    return {
+      url: proxy.httpProxy || proxy.httpsProxy || null,
+      bypass: proxy.noProxy ? proxy.noProxy.split(';') : []
     }
-
-    return null
   } catch (error) {
     logger.error('Failed to get Windows proxy settings:', error)
     return null
@@ -894,6 +890,10 @@ export async function getWindowsCertificates(): Promise<string[]> {
 
 ---
 
-**ドキュメントバージョン**: 1.0
+**ドキュメントバージョン**: 1.1
 **最終更新**: 2025-11-09
+**変更履歴**:
+- v1.1 (2025-11-09): `windows-system-proxy`を`@cypress/get-windows-proxy`に変更
+- v1.0 (2025-11-09): 初版作成
+
 **次回レビュー**: 実装フェーズ1完了後
