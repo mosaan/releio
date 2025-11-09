@@ -17,7 +17,7 @@ export async function streamSessionText(
   cb: () => void
 ): Promise<void> {
   try {
-    const model = createModel(config.provider, config.apiKey, config.model)
+    const model = await createModel(config.provider, config.apiKey, config.model)
 
     // Add abort signal listener for logging
     session.abortSignal.addEventListener('abort', () => {

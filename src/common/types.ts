@@ -104,3 +104,24 @@ export interface RendererMainAPI {
   ping: () => Promise<Result<string>>
   openFolder: (folderPath: string) => Promise<Result<void>>
 }
+
+// Proxy and Certificate Types
+
+export type ProxyMode = 'system' | 'custom' | 'none'
+
+export interface ProxySettings {
+  mode: ProxyMode
+  httpProxy?: string
+  httpsProxy?: string
+  noProxy?: string[]
+  username?: string
+  password?: string
+}
+
+export type CertificateMode = 'system' | 'custom' | 'none'
+
+export interface CertificateSettings {
+  mode: CertificateMode
+  customCertificates?: string[]
+  rejectUnauthorized?: boolean
+}

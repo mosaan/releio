@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm'
-import { db } from './db'
-import { settings } from './db/schema'
+import { db } from '../db'
+import { settings } from '../db/schema'
 
 export async function getSetting<T>(key: string): Promise<T> {
   const result = await db
