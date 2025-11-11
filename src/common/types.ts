@@ -11,6 +11,7 @@ export interface AIConfig {
   apiKey: string
 }
 
+// Legacy v1 settings (kept for backward compatibility)
 export interface AISettings {
   default_provider?: AIProvider
   openai_api_key?: string
@@ -19,6 +20,53 @@ export interface AISettings {
   anthropic_model?: string
   google_api_key?: string
   google_model?: string
+  azure_api_key?: string
+  azure_model?: string
+}
+
+// v2 Settings with multi-preset support
+export interface AISettingsV2 {
+  version: 2
+  defaultPresetId?: string // Last used or user-defined default
+
+  // Provider-level configurations
+  providers: {
+    openai?: AIProviderConfig
+    anthropic?: AIProviderConfig
+    google?: AIProviderConfig
+    azure?: AzureProviderConfig
+  }
+
+  // User-defined presets (combinations of provider + model + parameters)
+  presets: AIModelPreset[]
+}
+
+export interface AIProviderConfig {
+  apiKey: string
+  baseURL?: string // Custom endpoint (e.g., for OpenAI-compatible APIs)
+  // Provider-specific options stored here
+  [key: string]: unknown
+}
+
+export interface AzureProviderConfig extends AIProviderConfig {
+  resourceName?: string
+  useDeploymentBasedUrls?: boolean
+}
+
+export interface AIModelPreset {
+  id: string // UUID
+  name: string // Auto-generated: "{Provider} - {Model}"
+  provider: AIProvider
+  model: string
+  parameters?: {
+    temperature?: number
+    maxTokens?: number
+    topP?: number
+    topK?: number
+    // Other provider-specific parameters
+    [key: string]: unknown
+  }
+  createdAt: string // ISO 8601
 }
 
 export class TimeoutError extends Error {
