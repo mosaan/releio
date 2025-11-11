@@ -124,6 +124,8 @@ The configuration uses New York style with Lucide icons and neutral base color.
 - **MCP Integration**: External tool calling via Model Context Protocol
   - Multi-step tool execution with automatic chaining
   - Multiple MCP server support
+  - Real-time tool execution display in chat UI with expandable details
+  - Tool call tracking: arguments, results, and execution status
   - See `docs/MCP_INTEGRATION_DESIGN.md` for implementation details
 - **Provider configurations**: Model lists, API key management, connection testing
 - **Assistant UI components**: Pre-built chat interface with streaming support

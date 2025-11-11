@@ -1054,13 +1054,27 @@ API キーなどの機密情報が環境変数に含まれる可能性があり�
      }
    }
    ```
-4. チャット UI でのツール実行結果の表示（Assistant UI が対応）
+4. チャット UI でのツール実行結果の表示（✅ **実装済み** - Issue #8）
+   - Backend から renderer へのツールイベント送信（`aiToolCall`, `aiToolResult`）
+   - Renderer でのイベント処理と content parts への統合
+   - ToolCallPart コンポーネントによる UI 表示
+     - 展開可能なツールカード（実行中/完了ステータス表示）
+     - ツール名、引数、結果の詳細表示
+     - ツール呼び出し ID の表示（デバッグ用）
+   - 実装ファイル:
+     - `src/backend/ai/stream.ts`: ツールイベント emit
+     - `src/common/types.ts`: `ToolCallPayload`, `ToolResultPayload` 型定義
+     - `src/renderer/src/lib/ai.ts`: イベント処理とストリーム統合
+     - `src/renderer/src/components/AIRuntimeProvider.tsx`: content parts 生成
+     - `src/renderer/src/components/assistant-ui/tool-call.tsx`: UI コンポーネント
+     - `src/renderer/src/components/assistant-ui/thread.tsx`: UI 統合
 
 **成功基準**:
 - ✅ AI が MCP ツールを実行できる（`Record<string, Tool>` 形式をそのまま渡す）
 - ✅ マルチステップツール呼び出しが自動的に動作
 - ✅ ツール呼び出しと結果がログに詳細に記録される
-- ✅ ユーザーがツール実行を確認・承認できる
+- ✅ **ツール実行がチャット UI にリアルタイムで表示される**（実装完了）
+- ⏳ ユーザーがツール実行を事前に承認できる（将来の拡張 - フェーズ 4 参照）
 
 **AI SDK v5 による簡素化**:
 - MCP Tools は既に AI SDK v5 のツール形式（`Record<string, Tool>`）
@@ -1186,9 +1200,17 @@ const client = experimental_createMCPClient({
 
 **更新日**: 2025-11-11
 **承認日**: 2025-11-09
-**バージョン**: 2.4 (Revised - 実装反映版)
+**バージョン**: 2.5 (Tool UI Display Implementation)
 **ステータス**: ✅ Approved & Implemented (承認済み・実装済み)
 **変更履歴**:
+- v2.5: ツール実行の UI 表示機能を実装（Issue #8 対応）
+  - Backend から Renderer へのツールイベント送信（`aiToolCall`, `aiToolResult`）
+  - `ToolCallPayload`, `ToolResultPayload` 型定義の追加
+  - Renderer でのイベント処理とストリーム統合
+  - `ToolCallPart` コンポーネントによる展開可能な UI 表示
+  - リアルタイムでツール実行状態を表示（Running/Completed）
+  - ツール引数と結果の詳細表示機能
+  - フェーズ 3 の一部として完了
 - v2.4: AI SDK v5 への対応を反映、実装との差分を修正
   - `ai` v5.0.92、`@ai-sdk/mcp` v0.0.8 を使用
   - `Experimental_StdioMCPTransport` クラスによる Transport 作成
