@@ -1,6 +1,7 @@
 import { createOpenAI } from '@ai-sdk/openai'
 import { createAnthropic } from '@ai-sdk/anthropic'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
+import { createAzure } from '@ai-sdk/azure'
 import type { AIProvider } from '@common/types'
 import type { LanguageModel } from 'ai'
 import { createCustomFetch } from './fetch'
@@ -32,6 +33,12 @@ export const FACTORY = {
     available: ['gemini-2.5-pro', 'gemini-2.5-flash'],
     createModel: async (apiKey: string, model: string, customFetch?: typeof fetch) =>
       createGoogleGenerativeAI({ apiKey, fetch: customFetch })(model)
+  },
+  azure: {
+    default: 'gpt-4o',
+    available: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-4', 'gpt-35-turbo'],
+    createModel: async (apiKey: string, model: string, customFetch?: typeof fetch) =>
+      createAzure({ apiKey, fetch: customFetch })(model)
   }
 }
 

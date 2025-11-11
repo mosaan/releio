@@ -230,6 +230,7 @@ export function AISettings({
                 <SelectItem value="openai">OpenAI</SelectItem>
                 <SelectItem value="anthropic">Anthropic</SelectItem>
                 <SelectItem value="google">Google</SelectItem>
+                <SelectItem value="azure">Azure OpenAI</SelectItem>
               </SelectContent>
             </Select>
           </div>
