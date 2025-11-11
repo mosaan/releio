@@ -46,11 +46,12 @@ graph TB
 
 **統合方法**:
 - `src/backend/ai/factory.ts` でプロバイダー管理
-- **Vercel AI SDK (`ai` パッケージ v4.3.17)** を使用
+- **Vercel AI SDK (`ai` パッケージ v5.0.92)** を使用
 - 各プロバイダーの API を直接呼び出し
 - `streamText()` によるストリーミング対応
+- **マルチステップツール呼び出し対応**: `stopWhen: stepCountIs(10)` で最大10ステップまで連鎖実行
 
-**重要**: AI SDK v4.2+ は **MCP を公式サポート**しており、`experimental_createMCPClient` API が利用可能です。
+**重要**: AI SDK v5 は **MCP を公式サポート**しており、専用の `@ai-sdk/mcp` パッケージで `experimental_createMCPClient` API を提供します。
 
 ### IPC 通信の特徴
 
@@ -100,38 +101,61 @@ MCP は複数のトランスポート方式をサポートしています：
 
 ### Vercel AI SDK の MCP サポート
 
-**重要な発見**: 本プロジェクトが既に使用している **Vercel AI SDK (v4.2+) は MCP を公式サポート**しています。
+**重要な発見**: 本プロジェクトが既に使用している **Vercel AI SDK v5 は MCP を公式サポート**しており、専用の `@ai-sdk/mcp` パッケージを提供しています。
 
 **サポート機能**:
-- ✅ **Tools**: 完全サポート（自動変換）
-- ✅ **Resources**: 完全サポート（`listResources()`, `readResource()`, `includeResources` オプション）
-- ✅ **Prompts**: 完全サポート（`listPrompts()`）
-- ✅ **stdio transport**: ローカルサーバー用
+- ✅ **Tools**: 完全サポート（AI SDK ToolSet形式に自動変換、`Record<string, Tool>` 形式）
+- ✅ **Resources**: 完全サポート（`listResources()`、結果から `.resources` プロパティで取得）
+- ✅ **Prompts**: 完全サポート（`listPrompts()`、結果から `.prompts` プロパティで取得）
+- ✅ **stdio transport**: ローカルサーバー用（`Experimental_StdioMCPTransport` クラス）
 - ✅ **HTTP/SSE transport**: リモートサーバー用（本番推奨）
+- ✅ **マルチステップツール呼び出し**: `stopWhen: stepCountIs(N)` で自動連鎖実行
 
 **主要 API**:
 ```typescript
-import { experimental_createMCPClient } from 'ai'
+import { experimental_createMCPClient, type experimental_MCPClient } from '@ai-sdk/mcp'
+import { Experimental_StdioMCPTransport } from '@ai-sdk/mcp/mcp-stdio'
+import { streamText, stepCountIs } from 'ai'
 
-const mcpClient = experimental_createMCPClient({
-  transport: {
-    type: 'stdio',
-    command: 'node',
-    args: ['path/to/server.js']
-  }
+// Transportを作成
+const transport = new Experimental_StdioMCPTransport({
+  command: 'node',
+  args: ['path/to/server.js'],
+  env: { /* 環境変数 */ }
 })
 
-// Tools を取得して streamText() に渡せる
-const tools = await mcpClient.getTools()
+// MCPクライアントを作成（非同期）
+const mcpClient: experimental_MCPClient = await experimental_createMCPClient({
+  transport
+})
 
-// Resources も includeResources: true でツール化可能
-const resourceTools = await mcpClient.getTools({ includeResources: true })
+// Tools を取得（Record<string, Tool> 形式）
+const tools = await mcpClient.tools()
+
+// AI SDK v5 でマルチステップツール呼び出し
+const result = streamText({
+  model,
+  messages,
+  tools,  // Record<string, Tool> 形式をそのまま渡せる
+  stopWhen: stepCountIs(10),  // 最大10ステップまでツール呼び出しを連鎖
+})
+
+// fullStream でツール呼び出しイベントも取得可能
+for await (const chunk of result.fullStream) {
+  if (chunk.type === 'tool-call') {
+    console.log('Tool called:', chunk.toolName, chunk.input)
+  } else if (chunk.type === 'tool-result') {
+    console.log('Tool result:', chunk.toolName, chunk.output)
+  }
+}
 ```
 
 **メリット**:
 - `@modelcontextprotocol/sdk` を直接使用する必要がない
-- AI SDK との統合がシームレス
-- 型安全性が保証される
+- AI SDK v5 のツール形式（`Record<string, Tool>`）に自動変換される
+- `fullStream` でツール呼び出しの詳細をリアルタイムで取得可能
+- マルチステップツール呼び出しに完全対応
+- 型安全性が保証される（`experimental_MCPClient` 型）
 - Vercel が継続的にメンテナンス
 
 ---
@@ -313,20 +337,34 @@ src/
 
 **実装例**:
 ```typescript
-import { experimental_createMCPClient } from 'ai'
+import { experimental_createMCPClient, type experimental_MCPClient } from '@ai-sdk/mcp'
+import { Experimental_StdioMCPTransport } from '@ai-sdk/mcp/mcp-stdio'
+
+type MCPClient = experimental_MCPClient
 
 class MCPManager {
-  private clients: Map<string, ReturnType<typeof experimental_createMCPClient>> = new Map()
+  private clients: Map<string, MCPClient> = new Map()
   private serverConfigs: Map<string, MCPServerConfig> = new Map()
 
   // アプリ起動時に呼び出される
+  // 個別のサーバー起動失敗でもバックエンドプロセスは継続
   async initialize(): Promise<void> {
-    const configs = await this.loadServerConfigs()
-    for (const config of configs) {
-      this.serverConfigs.set(config.id, config)
-      if (config.enabled) {
-        await this.start(config.id)
+    try {
+      const configs = await this.loadServerConfigs()
+      for (const config of configs) {
+        this.serverConfigs.set(config.id, config)
+        if (config.enabled) {
+          const result = await this.start(config.id)
+          if (result.status === 'error') {
+            // エラーをログに記録するが、処理は継続
+            logger.error(`Failed to start server ${config.name}:`, result.error)
+          }
+        }
       }
+    } catch (err) {
+      // 初期化全体の失敗でもバックエンドプロセスは継続
+      logger.error('Failed to initialize MCP Manager', err)
+      logger.warn('Backend process will continue despite MCP initialization failure')
     }
   }
 
@@ -334,17 +372,36 @@ class MCPManager {
     const config = this.serverConfigs.get(serverId)
     if (!config) return error('Server config not found')
 
-    const client = experimental_createMCPClient({
-      transport: {
-        type: 'stdio',
+    try {
+      // Transportを作成
+      const transport = new Experimental_StdioMCPTransport({
         command: config.command,
         args: config.args,
-        env: config.env
-      }
-    })
+        env: config.env || undefined
+      })
 
-    this.clients.set(serverId, client)
-    return ok(undefined)
+      // MCPクライアントを作成（awaitが必要）
+      const client = await experimental_createMCPClient({
+        transport
+      })
+
+      this.clients.set(serverId, client)
+
+      // 接続確認のため即座にツールを取得
+      try {
+        const tools = await client.tools()
+        const toolCount = Object.keys(tools).length
+        logger.info(`Successfully connected to ${config.name}: ${toolCount} tool(s) available`)
+      } catch (err) {
+        logger.warn(`Server ${config.name} started but failed to get tools:`, err)
+      }
+
+      return ok(undefined)
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err)
+      logger.error(`Failed to start server ${config.name}:`, err)
+      return error(`Failed to start server: ${errMsg}`)
+    }
   }
 
   async stop(serverId: string): Promise<Result<void>> {
@@ -408,15 +465,22 @@ class MCPManager {
     const client = this.clients.get(serverId)
     if (!client) return error('Server not connected')
 
-    const resources = await client.listResources()
+    const result = await client.listResources()
+    const resources = result.resources as MCPResource[]
     return ok(resources)
   }
 
-  async getTools(serverId: string, includeResources = false): Promise<Result<MCPTool[]>> {
+  async listTools(serverId: string): Promise<Result<MCPTool[]>> {
     const client = this.clients.get(serverId)
     if (!client) return error('Server not connected')
 
-    const tools = await client.getTools({ includeResources })
+    // tools() は Record<string, Tool> を返すので配列に変換
+    const toolsRecord = await client.tools()
+    const tools = Object.entries(toolsRecord).map(([name, tool]) => ({
+      name,
+      description: tool.description,
+      inputSchema: tool.inputSchema
+    })) as MCPTool[]
     return ok(tools)
   }
 
@@ -424,19 +488,40 @@ class MCPManager {
     const client = this.clients.get(serverId)
     if (!client) return error('Server not connected')
 
-    const prompts = await client.listPrompts()
+    const result = await client.listPrompts()
+    const prompts = result.prompts as MCPPrompt[]
     return ok(prompts)
   }
 
-  // AI統合用: 全サーバーのツールを取得
-  async getAllTools(): Promise<MCPTool[]> {
-    const allTools: MCPTool[] = []
+  // AI統合用: 全サーバーのツールを取得（Record<string, Tool> 形式）
+  async getAllTools(): Promise<Record<string, any>> {
+    const allTools: Record<string, any> = {}
     for (const [serverId, client] of this.clients) {
-      // サーバー設定からincludeResourcesを取得
-      const config = await this.getServerConfig(serverId)
-      const tools = await client.getTools({ includeResources: config.includeResources })
-      allTools.push(...tools)
+      try {
+        const config = this.serverConfigs.get(serverId)
+        logger.info(`Getting tools from "${config?.name}"`)
+
+        // tools() は Record<string, Tool> を返す
+        const tools = await client.tools()
+        const toolNames = Object.keys(tools)
+
+        logger.info(`Retrieved ${toolNames.length} tool(s) from "${config?.name}"`)
+        if (toolNames.length > 0) {
+          toolNames.forEach(name => {
+            logger.info(`  - ${name}: ${tools[name].description || 'No description'}`)
+          })
+        }
+
+        // 複数サーバーのツールをマージ
+        Object.assign(allTools, tools)
+      } catch (err) {
+        logger.error(`Failed to get tools from server ${serverId}:`, err)
+        // エラーが発生しても他のサーバーは継続
+      }
     }
+
+    const totalCount = Object.keys(allTools).length
+    logger.info(`Total tools available: ${totalCount}`)
     return allTools
   }
 
@@ -449,11 +534,12 @@ class MCPManager {
 ```
 
 **重要なポイント**:
-- `@modelcontextprotocol/sdk` は使用しない
-- AI SDK の型定義をそのまま利用（型変換不要）
-- **各サーバーの `includeResources` 設定を尊重**: サーバーごとに制御可能
-- `streamText()` に直接渡せる形式でツールを取得
-- **デフォルトは `includeResources: false`**: コンテキスト圧迫を避けるため
+- `@modelcontextprotocol/sdk` は使用せず、`@ai-sdk/mcp` を利用
+- AI SDK v5 の型定義をそのまま利用（`experimental_MCPClient` 型）
+- `client.tools()` は `Record<string, Tool>` 形式を返すため型変換不要
+- `streamText()` に直接渡せる形式（`Record<string, Tool>`）でツールを取得
+- **エラーハンドリング**: MCPサーバー起動失敗でもバックエンドプロセスは継続
+- **詳細なログ出力**: `[MCP]`, `[TOOLS]`, `[START]` プレフィックスで通信状況を記録
 
 #### 2. Handler 拡張 (`src/backend/handler.ts`)
 
@@ -895,45 +981,90 @@ API キーなどの機密情報が環境変数に含まれる可能性があり�
 
 **タスク**:
 1. `MCPManager.getAllTools()` の実装
-   - 全サーバーのツールを集約
-   - 各サーバーの `includeResources` 設定を尊重
-   - データベースからサーバー設定を取得するヘルパーメソッド追加
+   - 全サーバーのツールを集約（`Record<string, Tool>` 形式）
+   - 詳細なログ出力（各サーバーから取得したツールを記録）
+   - エラー時も他のサーバーは継続
 2. `streamAIText()` に MCP ツールを渡す実装
    ```typescript
    // src/backend/handler.ts
    async streamAIText(messages: AIMessage[]): Promise<Result<string>> {
      // 既存のAI設定取得...
 
-     // MCP ツールを取得（各サーバーの設定に基づく）
+     // MCP ツールを取得（Record<string, Tool> 形式）
      const mcpTools = await this._mcpManager.getAllTools()
+     const toolCount = Object.keys(mcpTools).length
+     logger.info(`Streaming AI text with ${toolCount} MCP tool(s) available`)
 
      // streamText() に渡す
      const sessionId = await streamText(
        config,
        messages,
-       mcpTools,  // ← MCP ツールを追加
-       (channel, event) => this._rendererConnection.publishEvent(channel, event)
+       (channel, event) => this._rendererConnection.publishEvent(channel, event),
+       toolCount > 0 ? mcpTools : undefined  // ← MCP ツールを追加
      )
 
      return ok(sessionId)
    }
    ```
-3. チャット UI でのツール実行結果の表示（Assistant UI が対応）
+3. `streamText()` でマルチステップツール呼び出しと詳細ログを実装
+   ```typescript
+   // src/backend/ai/stream.ts
+   import { streamText, stepCountIs } from 'ai'
+
+   const result = streamText({
+     model,
+     messages,
+     temperature: 0.7,
+     stopWhen: stepCountIs(10),  // 最大10ステップまで連鎖実行
+     tools: mcpTools  // Record<string, Tool> 形式
+   })
+
+   // fullStream でツール呼び出しイベントを詳細にログ出力
+   for await (const chunk of result.fullStream) {
+     switch (chunk.type) {
+       case 'text-delta':
+         // テキスト送信
+         break
+       case 'tool-call':
+         logger.info(`[MCP] Tool called: ${chunk.toolName}`, {
+           toolCallId: chunk.toolCallId,
+           input: chunk.input
+         })
+         break
+       case 'tool-result':
+         logger.info(`[MCP] Tool result: ${chunk.toolName}`, {
+           toolCallId: chunk.toolCallId,
+           output: chunk.output
+         })
+         break
+       case 'finish':
+         logger.info(`[AI] Stream finished`, {
+           finishReason: chunk.finishReason,
+           usage: chunk.totalUsage
+         })
+         break
+     }
+   }
+   ```
+4. チャット UI でのツール実行結果の表示（Assistant UI が対応）
 
 **成功基準**:
-- ✅ AI がツールを実行できる（MCP Tools を `streamText()` に渡すだけ）
-- ✅ サーバーごとに Resources をツールとして扱うかどうか制御可能
+- ✅ AI が MCP ツールを実行できる（`Record<string, Tool>` 形式をそのまま渡す）
+- ✅ マルチステップツール呼び出しが自動的に動作
+- ✅ ツール呼び出しと結果がログに詳細に記録される
 - ✅ ユーザーがツール実行を確認・承認できる
 
-**AI SDK による簡素化**:
-- MCP Tools は AI SDK のツール形式に自動変換される
+**AI SDK v5 による簡素化**:
+- MCP Tools は既に AI SDK v5 のツール形式（`Record<string, Tool>`）
 - `streamText()` の `tools` パラメータに直接渡せる
+- `stopWhen: stepCountIs(N)` で簡単にマルチステップ対応
+- `fullStream` でツール呼び出しの詳細情報をリアルタイムで取得
 - ツール実行のハンドリングも AI SDK が担当
 
-**設計上の配慮**:
-- **サーバーごとの設定**: `includeResources` はサーバー設定の一部
-- **デフォルトは `false`**: コンテキスト圧迫を避けるため
-- **柔軟性**: ファイルシステムサーバーは OFF、GitHubサーバーは ON など、サーバーの特性に応じて設定可能
+**実装上の配慮**:
+- **詳細なログ**: `[MCP]`, `[TOOLS]`, `[START]` プレフィックスで識別しやすく
+- **エラー耐性**: 個別サーバーのエラーでも全体は継続
+- **可視性**: ツール呼び出しの入力・出力を全てログに記録
 
 ### フェーズ 4: 高度な機能 (将来の拡張)
 
@@ -1045,11 +1176,19 @@ const client = experimental_createMCPClient({
 
 ---
 
-**更新日**: 2025-11-09
+**更新日**: 2025-11-11
 **承認日**: 2025-11-09
-**バージョン**: 2.3 (Final)
-**ステータス**: ✅ Approved (承認済み - 実装可能)
+**バージョン**: 2.4 (Revised - 実装反映版)
+**ステータス**: ✅ Approved & Implemented (承認済み・実装済み)
 **変更履歴**:
+- v2.4: AI SDK v5 への対応を反映、実装との差分を修正
+  - `ai` v5.0.92、`@ai-sdk/mcp` v0.0.8 を使用
+  - `Experimental_StdioMCPTransport` クラスによる Transport 作成
+  - `client.tools()` が `Record<string, Tool>` 形式を返すことを明記
+  - `stopWhen: stepCountIs(10)` によるマルチステップ対応を追加
+  - `fullStream` でツール呼び出しイベントを取得することを追加
+  - エラーハンドリング（MCPサーバー起動失敗でもバックエンド継続）を明記
+  - 詳細なログ出力（`[MCP]`, `[TOOLS]`, `[START]` プレフィックス）を追加
 - v2.3: MCP サーバーのライフサイクル設計を明確化、`autoConnect` フィールドを削除し `enabled` のみで管理 → **承認済み**
 - v2.2: フェーズ 2 を Tools に集中、Prompts サポートをフェーズ 4（将来の拡張）に移動
 - v2.1: `includeResources` をサーバーごとの設定に変更（MCPServerConfig に配置）
