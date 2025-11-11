@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Plus, Edit2, Trash2, Server as ServerIcon, Link, LinkOff, AlertCircle } from 'lucide-react'
+import { Plus, Edit2, Trash2, Server as ServerIcon, Link, Unlink, AlertCircle } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
 import { isOk, isError } from '@common/result'
 import { logger } from '@renderer/lib/logger'
@@ -244,7 +244,7 @@ export function MCPSettings({ className }: MCPSettingsProps): React.JSX.Element 
     if (!server.enabled) {
       return (
         <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-700">
-          <LinkOff className="h-3 w-3" />
+          <Unlink className="h-3 w-3" />
           Disabled
         </span>
       )
