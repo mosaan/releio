@@ -18,6 +18,25 @@ async function main(): Promise<void> {
   })
 
   await server.init()
+  logger.info('Backend process initialized successfully')
 }
 
-main()
+// Catch uncaught exceptions
+process.on('uncaughtException', (error) => {
+  console.error('FATAL: Uncaught exception in backend process:', error)
+  logger.error('Uncaught exception', { error: error.message, stack: error.stack })
+  process.exit(1)
+})
+
+// Catch unhandled promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('FATAL: Unhandled promise rejection in backend process:', reason)
+  logger.error('Unhandled rejection', { reason, promise })
+  process.exit(1)
+})
+
+main().catch((error) => {
+  console.error('FATAL: Error in main():', error)
+  logger.error('Failed to start backend', { error: error.message, stack: error.stack })
+  process.exit(1)
+})

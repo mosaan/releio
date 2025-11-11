@@ -125,6 +125,61 @@ The configuration uses New York style with Lucide icons and neutral base color.
 - **Configuration**: AI settings stored in database and configurable via UI
 - **Session management**: Persistent chat sessions with proper state handling
 
+### Proxy and Certificate Configuration
+
+The application supports enterprise network environments with comprehensive proxy and certificate management:
+
+- **Proxy support**:
+  - System proxy detection (Windows) - reads from Windows registry
+  - Custom proxy configuration with authentication (username/password)
+  - HTTP/HTTPS proxy support with undici ProxyAgent
+  - Proxy bypass rules (No Proxy lists)
+  - Automatic fallback to 'none' mode if no proxy configured
+- **Certificate support**:
+  - System certificate store integration (Windows) - uses win-ca library
+  - Custom CA certificates (PEM format)
+  - Certificate validation control (rejectUnauthorized option)
+  - Automatic initialization to system mode on first launch
+- **Connection testing**: Built-in test functionality to verify proxy and certificate settings
+  - Tests real HTTP/HTTPS connections to google.com
+  - Categorizes errors (proxy/certificate/network/timeout/unknown)
+  - Displays response time and detailed error messages
+- **Configuration UI**: User-friendly settings interface with real-time validation
+  - System/Custom/None mode selection
+  - Live feedback on save/load operations
+  - Test Connection button with success/error indicators
+- **Error handling**: Detailed error messages with categorization and troubleshooting hints
+
+**Key Implementation Details**:
+- Custom fetch factory (`src/backend/ai/fetch.ts`) uses Node.js built-in fetch + undici ProxyAgent
+- Settings stored in database and applied to all AI API requests
+- IPC-based configuration sync between renderer and backend
+- Connection tests make real HTTP/HTTPS requests to verify settings
+- Platform-specific modules for Windows (`src/backend/platform/windows/`)
+- Full TypeScript type safety across IPC boundaries
+
+**Supported Platforms**:
+- ✅ Windows (fully tested on Windows 11)
+- ⚠️ macOS (planned for future, currently defaults to 'none' mode)
+- ⚠️ Linux (planned for future, currently defaults to 'none' mode)
+
+**Known Limitations**:
+- ⚠️ **PAC (Proxy Auto-Config) files are not currently supported**
+  - If Windows is configured with "Use setup script" (AutoConfigURL), system proxy mode will not work
+  - Workaround: Manually identify proxy URL from PAC file and configure using Custom mode
+  - See `docs/PROXY_CONFIGURATION.md` for detailed workaround instructions
+- ⚠️ NTLM/Kerberos proxy authentication not supported (Basic authentication only)
+
+**Usage**:
+1. On first launch, system proxy and certificate settings are automatically detected and saved
+2. Open Settings page to view or modify proxy/certificate configuration
+3. Choose mode: System (auto-detect), Custom (manual), or None (direct connection)
+4. Use "Test Connection" to verify settings work correctly
+5. All AI API requests automatically use configured settings
+
+For detailed configuration instructions and troubleshooting, see `docs/PROXY_CONFIGURATION.md`.
+For technical design details, see `docs/PROXY_AND_CERTIFICATE_DESIGN.md`.
+
 ### Logging Configuration
 
 - **Unified logging system** - All three processes (Main, Backend, Renderer) log to a single `app.log` file

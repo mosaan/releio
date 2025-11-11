@@ -1,6 +1,6 @@
 import { Connection } from '@common/connection'
-import type { Result, AIProvider, AIConfig, AISettings, AIMessage, AppEvent, MCPServerConfig, MCPResource, MCPTool, MCPPrompt } from '@common/types'
-import { ok } from '@common/result'
+import type { Result, AIProvider, AIConfig, AISettings, AIMessage, AppEvent, MCPServerConfig, MCPResource, MCPTool, MCPPrompt, ProxySettings, CertificateSettings, ConnectionTestResult } from '@common/types'
+import { ok, error, isOk } from '@common/result'
 import { dirname } from 'path'
 import { getSetting, setSetting, getAllSettings, clearSetting } from './settings'
 import { getDatabasePath, getLogPath } from './paths'
@@ -9,6 +9,9 @@ import { streamText, abortStream, listAvailableModel, testConnection } from './a
 import { FACTORY } from './ai/factory'
 import { close, db, destroy } from './db'
 import { mcpManager } from './mcp'
+import { getProxySettings, setProxySettings, getSystemProxySettings } from './settings/proxy'
+import { getCertificateSettings, setCertificateSettings, getSystemCertificateSettings } from './settings/certificate'
+import { testProxyConnection, testCertificateConnection, testCombinedConnection } from './settings/connectionTest'
 
 export class Handler {
   private _rendererConnection: Connection
@@ -123,9 +126,49 @@ export class Handler {
   async testAIProviderConnection(config: AIConfig): Promise<Result<boolean>> {
     const result = await testConnection(config)
     return ok(result)
+    return ok(settings)
   }
 
-  // MCP Server Management handlers
+  async setCertificateSettings(settings: CertificateSettings): Promise<Result<void>> {
+    await setCertificateSettings(settings)
+    return ok(undefined)
+  }
+
+  async getSystemCertificateSettings(): Promise<Result<CertificateSettings>> {
+    const settings = await getSystemCertificateSettings()
+    return ok(settings)
+  }
+
+  // Connection test handlers
+  async testProxyConnection(settings: ProxySettings): Promise<Result<ConnectionTestResult>> {
+    const result = await testProxyConnection(settings)
+    return ok(result)
+  }
+
+  async testCertificateConnection(settings: CertificateSettings): Promise<Result<ConnectionTestResult>> {
+    const result = await testCertificateConnection(settings)
+    return ok(result)
+  }
+
+  async testCombinedConnection(
+    proxySettings: ProxySettings,
+    certSettings: CertificateSettings
+  ): Promise<Result<ConnectionTestResult>> {
+    const result = await testCombinedConnection(proxySettings, certSettings)
+    return ok(result)
+  }
+
+  async testFullConnection(): Promise<Result<ConnectionTestResult, string>> {
+    // Get current proxy and certificate settings
+    const proxyResult = await this.getProxySettings()
+    const certResult = await this.getCertificateSettings()
+
+    if (!isOk(proxyResult) || !isOk(certResult)) {
+      return error('Failed to load current settings')
+    }
+
+    const result = await testCombinedConnection(proxyResult.value, certResult.value)
+    return ok(result)
   async listMCPServers(): Promise<Result<MCPServerConfig[], string>> {
     return await mcpManager.listServers()
   }

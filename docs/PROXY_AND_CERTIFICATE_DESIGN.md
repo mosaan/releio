@@ -93,36 +93,36 @@ export const FACTORY = {
 
 #### FR-1: システムモード（Windows）
 
-- [ ] Windowsレジストリからプロキシ設定を読み取り
+- [x] Windowsレジストリからプロキシ設定を読み取り
   - レジストリキー: `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Internet Settings`
   - ProxyEnable, ProxyServer, ProxyOverride 等
-- [ ] Windows証明書ストアからルートCA証明書を読み取り
+- [x] Windows証明書ストアからルートCA証明書を読み取り
   - Trusted Root Certification Authorities
-- [ ] 取得した設定をBackendプロセスのHTTPクライアントに適用
-- [ ] 設定の自動更新（起動時、または定期的）
+- [x] 取得した設定をBackendプロセスのHTTPクライアントに適用
+- [x] 設定の自動更新（起動時、または定期的）
 
 #### FR-2: カスタムモード
 
-- [ ] UI設定画面でプロキシ設定を入力
+- [x] UI設定画面でプロキシ設定を入力
   - プロキシホスト、ポート
   - 認証（ユーザー名・パスワード）
   - バイパスリスト
-- [ ] カスタムCA証明書ファイルのアップロード
+- [x] カスタムCA証明書ファイルのアップロード
   - PEM形式のサポート
   - 複数証明書の対応
-- [ ] 設定のデータベース保存（暗号化）
-- [ ] 設定のテスト機能（接続確認）
+- [x] 設定のデータベース保存（暗号化）
+- [x] 設定のテスト機能（接続確認）
 
 #### FR-3: 無設定モード
 
-- [ ] 現状の実装を維持
-- [ ] プロキシ・証明書の設定を一切適用しない
+- [x] 現状の実装を維持
+- [x] プロキシ・証明書の設定を一切適用しない
 
 #### FR-4: モード切り替え
 
-- [ ] UI設定画面でモードを選択
-- [ ] 設定変更の即時反映または再起動要求
-- [ ] 現在のモード表示
+- [x] UI設定画面でモードを選択
+- [x] 設定変更の即時反映または再起動要求
+- [x] 現在のモード表示
 
 ### 非機能要件
 
@@ -675,6 +675,355 @@ src/renderer/src/
 
 ---
 
+## 実装状況（2025-11-09時点）
+
+### ✅ Phase 1: 完了した実装 (100%)
+
+**初期実装コミット**: `86d934b` (2025-11-09 07:34)
+**リファクタリング**: `f381186` (2025-11-09 08:21)
+**テスト修正**: `76abe50` (2025-11-09 09:07)
+
+#### 実装された機能
+
+1. **プラットフォーム層** ✅
+   - `src/backend/platform/windows/proxy.ts` - Windows プロキシ設定取得
+   - `src/backend/platform/windows/certificate.ts` - Windows 証明書ストアアクセス
+
+2. **設定管理層** ✅
+   - `src/backend/settings/proxy.ts` - プロキシ設定の読み書き・モード管理
+   - `src/backend/settings/certificate.ts` - 証明書設定の読み書き・モード管理
+
+3. **Fetch Builder** ✅
+   - `src/backend/ai/fetch.ts` - カスタムfetch関数作成
+   - プロキシ・証明書を統合したHTTPクライアント
+
+4. **AI Factory統合** ✅
+   - `src/backend/ai/factory.ts` - カスタムfetchをAI SDKに渡す実装
+
+5. **データベースマイグレーション** ✅
+   - `resources/db/migrations/0001_add_default_proxy_certificate_settings.sql`
+   - デフォルトでシステムモードを設定
+
+6. **TypeScript型定義** ✅
+   - `src/common/types.ts` - ProxySettings, CertificateSettings型
+
+7. **テスタビリティ改善** ✅
+   - Logger: lazy initialization, ILogger interface, setTestLogger()
+   - Database: lazy initialization, getDatabase(), setTestDatabase()
+   - Test環境でのVitest IPC干渉回避
+
+#### 導入したパッケージ
+
+```json
+{
+  "https-proxy-agent": "^7.0.5",
+  "node-fetch": "^2.7.0",
+  "@cypress/get-windows-proxy": "^1.8.2",
+  "win-ca": "^3.5.1"
+}
+```
+
+#### ユニットテスト状況
+
+**テスト実装コミット**: `d8da79a`, `76abe50` (2025-11-09)
+
+**テストファイル**:
+- `tests/backend/proxy.test.ts` - プロキシ設定管理のテスト (21 tests)
+- `tests/backend/certificate.test.ts` - 証明書設定管理のテスト (26 tests)
+- `tests/backend/fetch.test.ts` - カスタムfetch builderのテスト (19 tests)
+- `tests/backend/database.test.ts` - データベース操作のテスト (11 tests)
+- `tests/backend/utils.test.ts` - ユーティリティ関数のテスト (2 tests)
+
+**テスト結果** (最終: 2025-11-09 17:00):
+```
+Test Files:  5 total (5 passed)
+Tests:       79 total (79 passed)
+Pass Rate:   100%
+Duration:    ~2.4 seconds
+```
+
+**パス状況の内訳**:
+- ✅ `database.test.ts` - 11/11 tests passed
+- ✅ `utils.test.ts` - 2/2 tests passed
+- ✅ `proxy.test.ts` - 21/21 tests passed
+- ✅ `fetch.test.ts` - 19/19 tests passed
+- ✅ `certificate.test.ts` - 26/26 tests passed
+
+### ✅ Phase 2: UI実装完了 (100%)
+
+**実装コミット**: `84023b6` (2025-11-09 11:45)
+**ステータス更新**: `a59e745` (2025-11-09 12:00)
+
+#### 実装された機能
+
+1. **IPC API層** ✅
+   - `src/backend/handler.ts` - プロキシ・証明書設定の取得/更新メソッド追加
+   - `src/common/types.ts` - RendererBackendAPI型拡張
+   - `src/preload/server.ts` - レンダラープロセスへのメソッド公開
+
+2. **UI コンポーネント** ✅
+   - `src/renderer/src/components/ProxySettings.tsx` - プロキシ設定UI
+     - System/Custom/None モード切替
+     - HTTP/HTTPS プロキシURL設定
+     - No-Proxy バイパスリスト
+     - オプション認証（ユーザー名/パスワード）
+     - システム設定リロード機能
+   - `src/renderer/src/components/CertificateSettings.tsx` - 証明書設定UI
+     - System/Custom/None モード切替
+     - ロード済み証明書数表示
+     - rejectUnauthorized セキュリティ設定
+     - システム証明書リロード機能
+   - `src/renderer/src/pages/Settings.tsx` - 両コンポーネントの統合
+
+#### UI設計の特徴
+- AISettings コンポーネントのパターンに準拠した一貫性のあるUI
+- リアルタイム保存/読込とユーザーフィードバック
+- プラットフォーム認識（Windows統合）
+- IPC境界を超えた完全な型安全性
+
+### ✅ Phase 3: エラーハンドリングと改善完了 (100%)
+
+**Connection Test Backend**: `9b41c3e`, `cb5c996` (2025-11-09 13:00-14:00)
+**Connection Test UI**: `6be8560` (2025-11-09 14:30)
+**Backend Monitoring**: `42ac31f`, `d2cfd79` (2025-11-09 15:00-15:30)
+**fetch Migration**: `29cf27e` (2025-11-09 16:00)
+**Documentation**: `9be4b34` (2025-11-09 16:30)
+**Test Fix**: `1251425` (2025-11-09 17:00)
+
+#### 実装された機能
+
+1. **接続テスト機能** ✅
+   - `src/backend/settings/connectionTest.ts` - テスト関数の実装
+     - testProxyConnection() - プロキシ接続テスト
+     - testCertificateConnection() - 証明書接続テスト
+     - testFullConnection() - プロキシ+証明書の統合テスト
+   - エラー分類（proxy/certificate/network/timeout/unknown）
+   - レスポンスタイム測定
+   - 詳細なエラーメッセージ生成
+
+2. **接続テスト UI統合** ✅
+   - `ProxySettings.tsx` にTest Connectionボタン追加
+   - `CertificateSettings.tsx` にTest Connectionボタン追加
+   - AISettingsのスタイルパターンに統一（緑/オレンジの色、5s/8s タイムアウト）
+   - リアルタイムフィードバック（成功/失敗表示）
+
+3. **Backend プロセス監視とエラーハンドリング** ✅
+   - `src/main/backend.ts` - stdio: 'pipe' で stderr キャプチャ
+   - プロセス監視（spawn/exit イベント）
+   - `src/backend/index.ts` - 包括的エラーハンドリング
+     - uncaughtException ハンドラ
+     - unhandledRejection ハンドラ
+     - main() のエラーキャッチ
+
+4. **node-fetch から組み込み fetch への移行** ✅
+   - `src/backend/ai/fetch.ts` - 完全な書き直し
+   - Node.js 組み込み fetch + undici ProxyAgent 使用
+   - agent オプションから dispatcher オプションへ変更
+   - 依存関係削減（node-fetch 削除、undici 追加）
+   - `tests/backend/fetch.test.ts` - global.fetch モックへ更新
+
+5. **ドキュメント作成** ✅
+   - `docs/PROXY_CONFIGURATION.md` - 包括的なユーザーガイド
+     - 設定手順（全モード）
+     - 接続テスト使用方法
+     - トラブルシューティング
+     - セキュリティ考慮事項
+     - Mermaid 図によるデータフロー説明
+   - `CLAUDE.md` - Proxy/Certificate セクション追加
+
+6. **テスト修正** ✅
+   - `tests/backend/certificate.test.ts` - Windows platform モック追加
+   - テスト成功率: 100% (79/79)
+
+### ✅ Windows環境でのE2Eテストと最終調整 (100%)
+
+**実Windows環境での動作確認**: 2025-11-09 23:00-24:00
+**バグ修正コミット**: `5b000df`, `5df0316`, `ac6eb6c`, `9adf458`
+
+#### 実施したE2Eテスト
+
+1. **Windows環境での実機テスト** ✅
+   - Windows 11 環境でアプリケーション起動確認
+   - AI チャット機能の正常動作確認
+   - プロキシ・証明書設定の読み込み確認
+
+2. **発見された問題と修正** ✅
+
+   **問題1: CommonJS モジュールのインポートエラー**
+   - エラー: `getWindowsProxy is not a function`, `winCa.inject is not a function`
+   - 原因: dynamic import で named import として扱っていた
+   - 修正: `.default` import に変更 (`5b000df`)
+   ```typescript
+   // 修正前
+   const { getWindowsProxy } = await import('@cypress/get-windows-proxy')
+
+   // 修正後
+   const getWindowsProxy = (await import('@cypress/get-windows-proxy')).default
+   ```
+
+   **問題2: win-ca API の使用方法エラー**
+   - エラー: 証明書読み込みでハング
+   - 原因: `winCa.inject()` は存在しない、正しいAPIは関数呼び出し
+   - 修正: `ondata`/`onend` コールバックパターンに変更 (`5df0316`)
+   ```typescript
+   // 修正前
+   winCa.inject('+', (error, certificate) => { ... })
+
+   // 修正後
+   winCa({
+     format: winCa.der2.pem,
+     ondata: (cert) => { certificates.push(cert) },
+     onend: () => { resolve() }
+   })
+   ```
+
+   **問題3: 初回起動時のUX改善**
+   - 改善: system モードを自動的にデータベースに保存 (`ac6eb6c`)
+   - 効果: Settings UI で初回から「System」が選択された状態で表示
+
+   **問題4: プロキシ未設定環境への対応**
+   - 改善: Windows プロキシ設定がない場合に `none` モードを返す (`9adf458`)
+   - 効果: プロキシ未設定環境でもエラーなく動作
+
+#### E2Eテスト結果
+
+**テスト環境**:
+- OS: Windows 11
+- プロキシ: なし（直接接続）
+- 証明書: Windows システム証明書ストア使用
+
+**テスト項目と結果**:
+- ✅ アプリケーション起動
+- ✅ Windows システムプロキシ設定読み取り（未設定の場合の処理含む）
+- ✅ Windows 証明書ストアからの証明書取得
+- ✅ AI API への接続（Google Gemini）
+- ✅ チャットメッセージの送受信
+- ✅ Settings UI での設定表示・変更
+- ✅ Connection Test 機能の動作
+
+**結論**: すべてのコア機能が実際のWindows環境で正常に動作することを確認
+
+### 完了したリファクタリング
+
+#### ✅ Logger のテスタビリティ向上 (完了)
+
+**実装内容**:
+- `ILogger`インターフェース追加
+- `getLogger()`, `setTestLogger()`関数実装
+- Test環境でのVitest IPC干渉回避
+- `process.send`が利用できない場合のフォールバック
+
+**変更ファイル**:
+- `src/backend/logger.ts`
+- `tests/helpers/testLogger.ts` (新規)
+- `tests/setup.ts`
+
+#### ✅ Database の Lazy Initialization (完了)
+
+**実装内容**:
+- `getDatabase()`, `setTestDatabase()`関数実装
+- `db`をProxyパターンで実装（後方互換性維持）
+- Test環境での`:memory:`データベースフォールバック
+- `connectDatabase()`にオプショナルパスパラメータ追加
+
+**変更ファイル**:
+- `src/backend/db/index.ts`
+- `tests/backend/database-helper.ts`
+
+#### ✅ テストインフラの改善 (完了)
+
+**実装内容**:
+- すべてのテストファイルで相対パス使用（`@backend`エイリアス問題解決）
+- `process.platform='win32'`モック追加
+- `@cypress/get-windows-proxy`モック
+- `win-ca`モック (inject関数対応)
+- マイグレーションフォルダ検出のテスト環境対応
+
+**変更ファイル**:
+- `tests/backend/proxy.test.ts`
+- `tests/backend/certificate.test.ts`
+- `tests/backend/fetch.test.ts`
+- `tests/backend/database.test.ts`
+- `vitest.config.backend.ts`
+
+### 残っている課題
+
+#### 課題1: 企業プロキシ環境でのテスト (優先度: 低 - オプション)
+
+**必要性**:
+- 直接接続環境でのE2Eテストは完了
+- より厳格な企業プロキシ環境（Zscaler、認証プロキシ等）での検証はオプション
+
+**テスト項目**:
+1. 認証付きプロキシ経由での接続
+2. 企業SSL/TLSインターセプション環境での動作
+3. PAC ファイル環境での動作（未対応だが影響確認）
+4. NTLM/Kerberos 認証環境での動作（未対応だが影響確認）
+
+**優先度**: 低（基本機能は完成、特殊環境での追加検証）
+
+### 現在の実装完成度
+
+| カテゴリ | 完成度 | 備考 |
+|---------|--------|------|
+| **Phase 1: システムモード（Windows）** | 100% | コア機能完成、テスト100%パス |
+| プラットフォーム層（Windows） | 100% | プロキシ・証明書取得完了 |
+| 設定管理層 | 100% | DB保存・読み取り完了 |
+| Fetch Builder | 100% | 組み込みfetch + undici実装完了 |
+| AI Factory統合 | 100% | AI SDK統合完了 |
+| ユニットテスト | 100% | 79テスト中79がパス |
+| E2Eテスト | 100% | Windows 11環境で動作確認完了 |
+| **Phase 2: UI・カスタムモード** | 100% | IPC API、UI統合完了 |
+| IPC API層 | 100% | Handler、Preload、Types実装完了 |
+| UI コンポーネント | 100% | ProxySettings、CertificateSettings完成 |
+| Settings画面統合 | 100% | 完全統合、一貫性のあるUI |
+| **Phase 3: エラーハンドリングと改善** | 100% | 接続テスト、ドキュメント、監視完了 |
+| 接続テスト機能 | 100% | Backend + UI統合完了 |
+| エラー分類と表示 | 100% | 詳細なエラーメッセージ実装 |
+| Backend監視 | 100% | プロセス監視、エラーハンドリング完了 |
+| ドキュメント | 100% | PROXY_CONFIGURATION.md、CLAUDE.md完成 |
+| **Phase 4: macOS/Linux** | 0% | 未着手（将来的な拡張） |
+
+### 未実装機能（将来的な拡張）
+
+#### Phase 4: マルチプラットフォーム対応
+- [ ] macOS証明書ストア（Keychain）サポート
+- [ ] macOSシステムプロキシ読み取り
+- [ ] Linux証明書ストア対応
+- [ ] Linuxプロキシ設定読み取り
+
+#### オプション機能（Phase 2-3 の拡張）
+- [ ] 設定のインポート・エクスポート機能
+- [ ] 自動リトライ機能（接続失敗時）
+- [ ] PAC（Proxy Auto-Config）ファイルサポート
+- [ ] NTLM/Kerberos プロキシ認証対応
+
+### 次のステップ
+
+**現在の状態**: Phase 1-3 完了、Windows環境でのE2Eテスト完了、Issue #4 の要件をすべて満たしています。
+
+**推奨される次のステップ**:
+
+**優先度1: PR作成とマージ** ✅ Ready
+1. 現在のブランチで PR を作成
+2. コードレビュー
+3. main ブランチへのマージ
+
+**実装完了サマリー**:
+- ✅ Phase 1: Windows システムモード実装
+- ✅ Phase 2: UI・カスタムモード実装
+- ✅ Phase 3: エラーハンドリング・ドキュメント・監視
+- ✅ ユニットテスト: 100% パス (79/79)
+- ✅ E2Eテスト: Windows 11 環境で動作確認
+- ✅ バグ修正: CommonJS import、win-ca API、UX改善
+
+**将来的な拡張（オプション）**:
+- Phase 4: macOS/Linux 対応
+- 追加機能: 設定インポート/エクスポート、PAC サポート、NTLM/Kerberos 認証
+- 企業プロキシ環境（Zscaler等）での追加検証
+
+---
+
 ## リスクと制約事項
 
 ### 既知のリスク
@@ -683,9 +1032,18 @@ src/renderer/src/
    - **リスク**: Electronでは`NODE_EXTRA_CA_CERTS`が正しく動作しない報告あり
    - **対策**: 環境変数に頼らず、プログラムで証明書を読み込んでエージェントに設定
 
-2. **PAC（Proxy Auto-Config）ファイルの複雑さ**
-   - **リスク**: JavaScript実行が必要、実装が複雑
-   - **対策**: 第1フェーズでは固定プロキシのみサポート、PACは将来対応
+2. **PAC（Proxy Auto-Config）ファイルの制限** ⚠️ 実環境で確認済み
+   - **リスク**:
+     - `@cypress/get-windows-proxy` は `AutoConfigURL` レジストリ値を読み取らない
+     - PAC ファイルの JavaScript 実行が必要、実装が複雑
+     - 企業環境で「セットアップスクリプトを使う」が有効な場合、システムモードは動作しない
+   - **現在の対策**:
+     - ユーザーマニュアルに workaround を記載（PAC ファイルからプロキシ URL を特定しカスタムモードで設定）
+     - `docs/PROXY_CONFIGURATION.md` に詳細な手順を記載
+   - **将来の対策**:
+     - PAC ファイルの完全サポート実装を検討
+     - `pac-resolver` や `electron-proxy-agent` の利用を検討
+     - または Electron の `session.resolveProxy` API の活用
 
 3. **プロキシ認証（NTLM/Kerberos）**
    - **リスク**: Windows認証プロトコルのサポートが複雑
