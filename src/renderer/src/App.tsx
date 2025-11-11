@@ -1,14 +1,13 @@
 import { useState, useEffect } from 'react'
-import { Settings as SettingsIcon, MessageCircle, Database } from 'lucide-react'
+import { Settings as SettingsIcon, MessageCircle } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
 import { Settings } from '@renderer/components/Settings'
-import { DummyDataPage } from '@renderer/components/DummyDataPage'
 import { ChatPage } from '@renderer/components/ChatPage'
 import { logger } from '@renderer/lib/logger'
 import { isOk } from '@common/result'
 
 function App() {
-  const [currentPage, setCurrentPage] = useState<'home' | 'settings' | 'chat' | 'dummyData'>('home')
+  const [currentPage, setCurrentPage] = useState<'home' | 'settings' | 'chat'>('home')
   const [backendConnected, setBackendConnected] = useState(false)
 
   useEffect(() => {
@@ -30,10 +29,6 @@ function App() {
 
   const handleChatClick = (): void => {
     setCurrentPage('chat')
-  }
-
-  const handleDummyDataClick = (): void => {
-    setCurrentPage('dummyData')
   }
 
   const handleBackToHome = (): void => {
@@ -62,10 +57,6 @@ function App() {
 
   if (currentPage === 'chat') {
     return <ChatPage onBack={handleBackToHome} />
-  }
-
-  if (currentPage === 'dummyData') {
-    return <DummyDataPage onBack={handleBackToHome} />
   }
 
   return (
@@ -119,14 +110,6 @@ function App() {
               >
                 <MessageCircle className="h-4 w-4" />
                 Chat Demo
-              </Button>
-              <Button
-                variant="outline"
-                onClick={handleDummyDataClick}
-                className="flex items-center gap-2 backdrop-blur-sm bg-white/50 hover:bg-white/80 border-2 border-purple-200 hover:border-purple-400 transition-all duration-300"
-              >
-                <Database className="h-4 w-4" />
-                Database Demo
               </Button>
               <Button
                 variant="outline"
