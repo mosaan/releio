@@ -165,6 +165,13 @@ The application supports enterprise network environments with comprehensive prox
 - ⚠️ macOS (planned for future, currently defaults to 'none' mode)
 - ⚠️ Linux (planned for future, currently defaults to 'none' mode)
 
+**Known Limitations**:
+- ⚠️ **PAC (Proxy Auto-Config) files are not currently supported**
+  - If Windows is configured with "Use setup script" (AutoConfigURL), system proxy mode will not work
+  - Workaround: Manually identify proxy URL from PAC file and configure using Custom mode
+  - See `docs/PROXY_CONFIGURATION.md` for detailed workaround instructions
+- ⚠️ NTLM/Kerberos proxy authentication not supported (Basic authentication only)
+
 **Usage**:
 1. On first launch, system proxy and certificate settings are automatically detected and saved
 2. Open Settings page to view or modify proxy/certificate configuration

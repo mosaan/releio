@@ -1032,9 +1032,18 @@ Duration:    ~2.4 seconds
    - **リスク**: Electronでは`NODE_EXTRA_CA_CERTS`が正しく動作しない報告あり
    - **対策**: 環境変数に頼らず、プログラムで証明書を読み込んでエージェントに設定
 
-2. **PAC（Proxy Auto-Config）ファイルの複雑さ**
-   - **リスク**: JavaScript実行が必要、実装が複雑
-   - **対策**: 第1フェーズでは固定プロキシのみサポート、PACは将来対応
+2. **PAC（Proxy Auto-Config）ファイルの制限** ⚠️ 実環境で確認済み
+   - **リスク**:
+     - `@cypress/get-windows-proxy` は `AutoConfigURL` レジストリ値を読み取らない
+     - PAC ファイルの JavaScript 実行が必要、実装が複雑
+     - 企業環境で「セットアップスクリプトを使う」が有効な場合、システムモードは動作しない
+   - **現在の対策**:
+     - ユーザーマニュアルに workaround を記載（PAC ファイルからプロキシ URL を特定しカスタムモードで設定）
+     - `docs/PROXY_CONFIGURATION.md` に詳細な手順を記載
+   - **将来の対策**:
+     - PAC ファイルの完全サポート実装を検討
+     - `pac-resolver` や `electron-proxy-agent` の利用を検討
+     - または Electron の `session.resolveProxy` API の活用
 
 3. **プロキシ認証（NTLM/Kerberos）**
    - **リスク**: Windows認証プロトコルのサポートが複雑

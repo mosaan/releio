@@ -88,6 +88,47 @@ Windows のシステムプロキシ設定を自動的に読み込んで使用し
 - Windows のインターネット オプション → 接続 → LAN の設定 で設定されたプロキシが使用されます
 - システムプロキシの認証情報は読み込めないため、認証が必要な場合は「Custom Proxy」モードを使用してください
 
+#### PAC（Proxy Auto-Config）ファイルについて
+
+**⚠️ 現在の制限**: PAC ファイル（自動プロキシ設定スクリプト）は現時点ではサポートされていません。
+
+Windows の「自動プロキシセットアップ」で「セットアップスクリプトを使う」が有効になっている場合、システムプロキシモードは動作しません。
+
+**Workaround（回避策）**:
+
+1. **PAC ファイルの URL を確認**:
+   - Windows 設定 → ネットワークとインターネット → プロキシ
+   - 「セットアップスクリプトを使う」の「スクリプトのアドレス」を確認
+   - 例: `http://proxy.company.com/proxy.pac`
+
+2. **PAC ファイルの内容を確認**:
+   - ブラウザでスクリプトアドレスを開く
+   - `FindProxyForURL` 関数内のプロキシサーバーアドレスを確認
+   ```javascript
+   // PAC ファイルの例
+   function FindProxyForURL(url, host) {
+     return "PROXY proxy.company.com:8080; DIRECT";
+   }
+   ```
+   - この例では `proxy.company.com:8080` がプロキシサーバーです
+
+3. **カスタムモードで設定**:
+   - Proxy Mode: `Custom Proxy` を選択
+   - HTTP Proxy: `http://proxy.company.com:8080`
+   - HTTPS Proxy: `http://proxy.company.com:8080`
+   - 認証が必要な場合はユーザー名/パスワードも入力
+   - Save Settings
+
+4. **接続テスト**:
+   - 「Test Connection」ボタンで動作確認
+
+**PowerShell でスクリプトアドレスを確認する方法**:
+```powershell
+Get-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings" -Name AutoConfigURL
+```
+
+**将来の対応予定**: PAC ファイルの完全サポートは将来のバージョンで実装を予定しています。
+
 ### カスタムプロキシモード
 
 プロキシサーバーのアドレスと認証情報を手動で設定します。
