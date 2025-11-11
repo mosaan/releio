@@ -1,4 +1,5 @@
-import { experimental_createMCPClient, Experimental_StdioMCPTransport } from '@ai-sdk/mcp'
+import { experimental_createMCPClient, type experimental_MCPClient } from '@ai-sdk/mcp'
+import { Experimental_StdioMCPTransport } from '@ai-sdk/mcp/mcp-stdio'
 import type { MCPServerConfig, MCPResource, MCPTool, MCPPrompt, Result } from '@common/types'
 import { ok, error } from '@common/result'
 import logger from '../logger'
@@ -9,7 +10,7 @@ import { randomUUID } from 'crypto'
 
 const mcpLogger = logger.child('mcp')
 
-type MCPClient = ReturnType<typeof experimental_createMCPClient>
+type MCPClient = experimental_MCPClient
 
 export class MCPManager {
   private clients: Map<string, MCPClient> = new Map()
@@ -307,9 +308,10 @@ export class MCPManager {
 
     try {
       mcpLogger.info(`Listing resources from server: ${config?.name || serverId}`)
-      const resources = await client.listResources()
+      const result = await client.listResources()
+      const resources = result.resources as MCPResource[]
       mcpLogger.info(`Found ${resources.length} resource(s) from ${config?.name}`)
-      return ok(resources as MCPResource[])
+      return ok(resources)
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err)
       mcpLogger.error(`Failed to list resources from ${config?.name}:`, err)
@@ -330,9 +332,15 @@ export class MCPManager {
 
     try {
       mcpLogger.info(`Listing tools from server: ${config?.name || serverId}`)
-      const tools = await client.tools()
+      const toolsRecord = await client.tools()
+      // Convert Record<string, Tool> to MCPTool array for UI display
+      const tools = Object.entries(toolsRecord).map(([name, tool]) => ({
+        name,
+        description: tool.description,
+        inputSchema: tool.inputSchema as any
+      })) as MCPTool[]
       mcpLogger.info(`Found ${tools.length} tool(s) from ${config?.name}`)
-      return ok(tools as MCPTool[])
+      return ok(tools)
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err)
       mcpLogger.error(`Failed to list tools from ${config?.name}:`, err)
@@ -353,9 +361,10 @@ export class MCPManager {
 
     try {
       mcpLogger.info(`Listing prompts from server: ${config?.name || serverId}`)
-      const prompts = await client.listPrompts()
+      const result = await client.listPrompts()
+      const prompts = result.prompts as MCPPrompt[]
       mcpLogger.info(`Found ${prompts.length} prompt(s) from ${config?.name}`)
-      return ok(prompts as MCPPrompt[])
+      return ok(prompts)
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err)
       mcpLogger.error(`Failed to list prompts from ${config?.name}:`, err)
@@ -369,7 +378,7 @@ export class MCPManager {
   async callTool(
     serverId: string,
     toolName: string,
-    args: unknown
+    _args: unknown
   ): Promise<Result<unknown, string>> {
     const client = this.clients.get(serverId)
     const config = this.serverConfigs.get(serverId)
@@ -382,8 +391,8 @@ export class MCPManager {
       mcpLogger.info(`Calling tool ${toolName} on server: ${config?.name || serverId}`)
 
       // Get the tool and execute it
-      const tools = await client.tools()
-      const tool = tools.find((t) => t.name === toolName)
+      const toolsRecord = await client.tools()
+      const tool = toolsRecord[toolName]
 
       if (!tool) {
         return error(`Tool not found: ${toolName}`)
@@ -403,10 +412,10 @@ export class MCPManager {
 
   /**
    * Get all tools from all active servers (Phase 3)
-   * Returns tools in AI SDK format (already converted by the MCP client)
+   * Returns tools in AI SDK v5 ToolSet format (Record<string, Tool>)
    */
-  async getAllTools(): Promise<MCPTool[]> {
-    const allTools: MCPTool[] = []
+  async getAllTools(): Promise<Record<string, any>> {
+    const allTools: Record<string, any> = {}
 
     mcpLogger.info(`[TOOLS] Gathering tools from ${this.clients.size} active MCP server(s)...`)
 
@@ -420,21 +429,26 @@ export class MCPManager {
       try {
         mcpLogger.info(`[TOOLS] Getting tools from "${config.name}"`)
         const tools = await client.tools()
+        const toolNames = Object.keys(tools)
 
-        mcpLogger.info(`[TOOLS] Retrieved ${tools.length} tool(s) from "${config.name}"`)
-        if (tools.length > 0) {
-          tools.forEach(tool => {
-            mcpLogger.info(`[TOOLS]   - ${tool.name}: ${tool.description || 'No description'}`)
+        mcpLogger.info(`[TOOLS] Retrieved ${toolNames.length} tool(s) from "${config.name}"`)
+        if (toolNames.length > 0) {
+          toolNames.forEach(name => {
+            const tool = tools[name]
+            mcpLogger.info(`[TOOLS]   - ${name}: ${tool.description || 'No description'}`)
           })
         }
-        allTools.push(...(tools as MCPTool[]))
+
+        // Merge tools from this server into allTools
+        Object.assign(allTools, tools)
       } catch (err) {
         mcpLogger.error(`[TOOLS] Failed to get tools from "${config.name}":`, err)
         // Continue with other servers even if one fails
       }
     }
 
-    mcpLogger.info(`[TOOLS] Total tools available: ${allTools.length}`)
+    const totalCount = Object.keys(allTools).length
+    mcpLogger.info(`[TOOLS] Total tools available: ${totalCount}`)
     return allTools
   }
 

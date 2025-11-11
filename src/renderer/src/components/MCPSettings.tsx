@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Plus, Edit2, Trash2, Server as ServerIcon, Link, Unlink, AlertCircle } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
-import { isOk, isError } from '@common/result'
+import { isOk } from '@common/result'
 import { logger } from '@renderer/lib/logger'
 import type { MCPServerConfig } from '@common/types'
 import {

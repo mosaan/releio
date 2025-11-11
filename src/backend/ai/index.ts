@@ -1,4 +1,4 @@
-import type { AIMessage, AIConfig, AppEvent, MCPTool } from '@common/types'
+import type { AIMessage, AIConfig, AppEvent } from '@common/types'
 import { streamSessionText } from './stream'
 import { sessionStore } from './stream-session-store'
 import { createModel } from './factory'
@@ -33,7 +33,7 @@ export async function streamText(
   config: AIConfig,
   messages: AIMessage[],
   publishEvent: (channel: string, event: AppEvent) => void,
-  tools?: MCPTool[]
+  tools?: Record<string, any>
 ): Promise<string> {
   // Create and store session
   const session = sessionStore.startSession()

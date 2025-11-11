@@ -95,7 +95,8 @@ export class Handler {
 
     // Get MCP tools from all active servers (Phase 3)
     const mcpTools = await mcpManager.getAllTools()
-    logger.info(`Streaming AI text with ${mcpTools.length} MCP tool(s) available`)
+    const toolCount = Object.keys(mcpTools).length
+    logger.info(`Streaming AI text with ${toolCount} MCP tool(s) available`)
 
     const sessionId = await streamText(
       config,
@@ -103,7 +104,7 @@ export class Handler {
       (channel: string, event: AppEvent) => {
         this._rendererConnection.publishEvent(channel, event)
       },
-      mcpTools.length > 0 ? mcpTools : undefined
+      toolCount > 0 ? mcpTools : undefined
     )
     return ok(sessionId)
   }

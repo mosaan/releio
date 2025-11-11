@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import { createTestDatabase } from './database-helper'
 import { MCPManager } from '@backend/mcp/manager'
-import type { MCPServerConfig } from '@common/types'
 
 // Mock the AI SDK's experimental_createMCPClient
 vi.mock('ai', () => ({

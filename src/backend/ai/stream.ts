@@ -1,7 +1,7 @@
 import { streamText } from 'ai'
 import logger from '../logger'
 import { createModel } from './factory'
-import type { AIMessage, AIConfig, AppEvent, MCPTool } from '@common/types'
+import type { AIMessage, AIConfig, AppEvent } from '@common/types'
 import { EventType } from '@common/types'
 import type { StreamSession } from './stream-session-store'
 
@@ -15,7 +15,7 @@ export async function streamSessionText(
   session: StreamSession,
   publishEvent: (channel: string, event: AppEvent) => void,
   cb: () => void,
-  tools?: MCPTool[]
+  tools?: Record<string, any>
 ): Promise<void> {
   try {
     const model = await createModel(config.provider, config.apiKey, config.model)
@@ -28,10 +28,11 @@ export async function streamSessionText(
     })
 
     // Log MCP tools availability
-    if (tools && tools.length > 0) {
-      logger.info(`[MCP] ${tools.length} tool(s) available for session ${session.id}`)
-      tools.forEach(tool => {
-        logger.info(`[MCP] Tool: ${tool.name} - ${tool.description || 'No description'}`)
+    const toolCount = tools ? Object.keys(tools).length : 0
+    if (toolCount > 0) {
+      logger.info(`[MCP] ${toolCount} tool(s) available for session ${session.id}`)
+      Object.entries(tools!).forEach(([name, tool]) => {
+        logger.info(`[MCP] Tool: ${name} - ${tool.description || 'No description'}`)
       })
     } else {
       logger.info(`[MCP] No MCP tools available for session ${session.id}`)
@@ -42,18 +43,8 @@ export async function streamSessionText(
       messages,
       temperature: 0.7,
       abortSignal: session.abortSignal,
-      // Convert MCP tools array to AI SDK v5 format (Record<string, CoreTool>)
-      ...(tools && tools.length > 0 ? {
-        tools: Object.fromEntries(
-          tools.map(tool => [
-            tool.name,
-            {
-              description: tool.description || `MCP tool: ${tool.name}`,
-              parameters: tool.inputSchema
-            }
-          ])
-        )
-      } : {})
+      // MCP tools are already in AI SDK v5 format (Record<string, Tool>)
+      ...(tools && toolCount > 0 ? { tools } : {})
     })
 
     logger.info(`[AI] Response streaming started with ${config.provider} for session: ${session.id}`)

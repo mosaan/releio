@@ -5,7 +5,17 @@
  */
 
 import { vi } from 'vitest'
-import type { ILogger } from '../../src/backend/logger'
+
+/**
+ * Logger interface for testing
+ */
+interface ILogger {
+  error: (...args: any[]) => void
+  warn: (...args: any[]) => void
+  info: (...args: any[]) => void
+  debug: (...args: any[]) => void
+  child: (scope: string) => ILogger
+}
 
 /**
  * Create a mock logger for testing
