@@ -127,8 +127,6 @@ The configuration uses New York style with Lucide icons and neutral base color.
 
 ### Proxy and Certificate Configuration
 
-**Status**: ✅ Fully implemented and tested on Windows 11 (Phase 1-3 complete)
-
 The application supports enterprise network environments with comprehensive proxy and certificate management:
 
 - **Proxy support**:
