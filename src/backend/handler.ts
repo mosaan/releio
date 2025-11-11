@@ -4,6 +4,7 @@ import type {
   AIProvider,
   AIConfig,
   AISettings,
+  AISettingsV2,
   AIMessage,
   AppEvent,
   MCPServerConfig,
@@ -13,7 +14,11 @@ import type {
   ProxySettings,
   CertificateSettings,
   ConnectionTestResult,
-  MCPServerWithStatus
+  MCPServerWithStatus,
+  StreamAIOptions,
+  AIModelPreset,
+  AIProviderConfig,
+  AzureProviderConfig
 } from '@common/types'
 import { ok, error, isOk } from '@common/result'
 import { dirname } from 'path'
@@ -27,6 +32,16 @@ import { mcpManager } from './mcp'
 import { getProxySettings as loadProxySettings, setProxySettings as saveProxySettings, getSystemProxySettings as loadSystemProxySettings } from './settings/proxy'
 import { getCertificateSettings as loadCertificateSettings, setCertificateSettings as saveCertificateSettings, getSystemCertificateSettings as loadSystemCertificateSettings } from './settings/certificate'
 import { testProxyConnection as runProxyTest, testCertificateConnection as runCertificateTest, testCombinedConnection as runCombinedTest } from './settings/connectionTest'
+import {
+  getAISettingsV2 as loadAISettingsV2,
+  saveAISettingsV2,
+  getAIPresets as loadAIPresets,
+  createAIPreset as newAIPreset,
+  updateAIPreset as modifyAIPreset,
+  deleteAIPreset as removeAIPreset,
+  updateProviderConfig as modifyProviderConfig,
+  getProviderConfig as loadProviderConfig
+} from './settings/ai-settings'
 
 export class Handler {
   private _rendererConnection: Connection
@@ -77,38 +92,91 @@ export class Handler {
   }
 
   // AI handlers
-  async streamAIText(messages: AIMessage[]): Promise<Result<string>> {
-    // Get AI settings from database
-    const aiSettings = await getSetting<AISettings>('ai')
+  async streamAIText(messages: AIMessage[], options?: StreamAIOptions): Promise<Result<string>> {
+    // Load v2 settings (auto-migrates from v1 if needed)
+    const settingsV2 = await loadAISettingsV2()
 
-    if (!aiSettings) throw new Error('No AI setting has been created')
+    let selectedPreset: AIModelPreset | undefined
+    let selectedProvider: AIProvider
+    let selectedModel: string
+    let apiKey: string
 
-    if (!aiSettings.default_provider)
-      throw new Error('No default AI provider found in the settings')
+    // Resolution logic: preset ID → explicit provider/model → default preset → first available preset
+    if (options?.presetId) {
+      // Use specified preset
+      selectedPreset = settingsV2.presets.find(p => p.id === options.presetId)
+      if (!selectedPreset) {
+        throw new Error(`Preset not found: ${options.presetId}`)
+      }
+      logger.info(`Using preset: ${selectedPreset.name} (${selectedPreset.id})`)
+    } else if (options?.provider) {
+      // Use explicit provider/model override
+      selectedProvider = options.provider
+      selectedModel = options.model || FACTORY[selectedProvider].default
 
-    // Determine which provider to use
-    const selectedProvider = aiSettings.default_provider!
+      logger.info(`Using explicit provider override: ${selectedProvider} - ${selectedModel}`)
+    } else if (settingsV2.defaultPresetId) {
+      // Use default preset
+      selectedPreset = settingsV2.presets.find(p => p.id === settingsV2.defaultPresetId)
+      if (!selectedPreset) {
+        throw new Error(`Default preset not found: ${settingsV2.defaultPresetId}`)
+      }
+      logger.info(`Using default preset: ${selectedPreset.name}`)
+    } else if (settingsV2.presets.length > 0) {
+      // Use first available preset with valid API key
+      for (const preset of settingsV2.presets) {
+        const providerConfig = settingsV2.providers[preset.provider]
+        if (providerConfig?.apiKey) {
+          selectedPreset = preset
+          break
+        }
+      }
+      if (!selectedPreset) {
+        throw new Error('No preset with valid API key found')
+      }
+      logger.info(`Using first available preset: ${selectedPreset.name}`)
+    } else {
+      // Fallback to v1 settings if no presets
+      logger.warn('No v2 presets found, falling back to v1 settings')
+      const aiSettings = await getSetting<AISettings>('ai')
+      if (!aiSettings?.default_provider) {
+        throw new Error('No AI provider configured')
+      }
 
-    // Get API key for the selected provider
-    const apiKeyField = `${selectedProvider}_api_key` as keyof AISettings
-    const apiKey = aiSettings[apiKeyField] as string
+      selectedProvider = aiSettings.default_provider
+      const apiKeyField = `${selectedProvider}_api_key` as keyof AISettings
+      apiKey = aiSettings[apiKeyField] as string
 
-    if (!apiKey) {
-      throw new Error(`API key not found for provider: ${selectedProvider}`)
+      if (!apiKey) {
+        throw new Error(`API key not found for provider: ${selectedProvider}`)
+      }
+
+      const modelField = `${selectedProvider}_model` as keyof AISettings
+      selectedModel = (aiSettings[modelField] as string) || FACTORY[selectedProvider].default
     }
 
-    // Get model for the selected provider
-    const modelField = `${selectedProvider}_model` as keyof AISettings
-    const model = (aiSettings[modelField] as string) || FACTORY[selectedProvider].default
+    // Extract provider, model, and API key from preset
+    if (selectedPreset) {
+      selectedProvider = selectedPreset.provider
+      selectedModel = selectedPreset.model
+
+      const providerConfig = settingsV2.providers[selectedProvider]
+      if (!providerConfig?.apiKey) {
+        throw new Error(`API key not configured for provider: ${selectedProvider}`)
+      }
+      apiKey = providerConfig.apiKey
+    }
 
     // Create config object
     const config: AIConfig = {
-      provider: selectedProvider,
-      model,
-      apiKey
+      provider: selectedProvider!,
+      model: selectedModel!,
+      apiKey: apiKey!
     }
 
-    // Get MCP tools from all active servers (Phase 3)
+    logger.info(`Streaming with ${config.provider} - ${config.model}`)
+
+    // Get MCP tools from all active servers
     const mcpTools = await mcpManager.getAllTools()
     const toolCount = Object.keys(mcpTools).length
     logger.info(`Streaming AI text with ${toolCount} MCP tool(s) available`)
@@ -142,6 +210,55 @@ export class Handler {
   async testAIProviderConnection(config: AIConfig): Promise<Result<boolean>> {
     const result = await testConnection(config)
     return ok(result)
+  }
+
+  // AI Settings v2 handlers
+  async getAISettingsV2(): Promise<Result<AISettingsV2>> {
+    const settings = await loadAISettingsV2()
+    return ok(settings)
+  }
+
+  async saveAISettingsV2(settings: AISettingsV2): Promise<Result<void>> {
+    await saveAISettingsV2(settings)
+    return ok(undefined)
+  }
+
+  async getAIPresets(): Promise<Result<AIModelPreset[]>> {
+    const presets = await loadAIPresets()
+    return ok(presets)
+  }
+
+  async createAIPreset(preset: Omit<AIModelPreset, 'id' | 'createdAt'>): Promise<Result<string>> {
+    const presetId = await newAIPreset(preset)
+    return ok(presetId)
+  }
+
+  async updateAIPreset(
+    presetId: string,
+    updates: Partial<Omit<AIModelPreset, 'id' | 'createdAt'>>
+  ): Promise<Result<void>> {
+    await modifyAIPreset(presetId, updates)
+    return ok(undefined)
+  }
+
+  async deleteAIPreset(presetId: string): Promise<Result<void>> {
+    await removeAIPreset(presetId)
+    return ok(undefined)
+  }
+
+  async updateProviderConfig(
+    provider: AIProvider,
+    config: AIProviderConfig | AzureProviderConfig
+  ): Promise<Result<void>> {
+    await modifyProviderConfig(provider, config)
+    return ok(undefined)
+  }
+
+  async getProviderConfig(
+    provider: AIProvider
+  ): Promise<Result<AIProviderConfig | AzureProviderConfig | undefined>> {
+    const config = await loadProviderConfig(provider)
+    return ok(config)
   }
 
   // Proxy settings handlers

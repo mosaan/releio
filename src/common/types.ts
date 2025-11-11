@@ -134,6 +134,14 @@ export interface BackendListenerAPI {
   offEvent: (channel: string) => void
 }
 
+// Options for AI text streaming
+export interface StreamAIOptions {
+  presetId?: string             // Use specific preset
+  provider?: AIProvider         // Override provider
+  model?: string                // Override model
+  parameters?: Record<string, unknown>  // Override parameters
+}
+
 export interface RendererBackendAPI {
   ping: () => Promise<Result<string>>
   getSetting: (key: string) => Promise<Result<unknown>>
@@ -142,10 +150,19 @@ export interface RendererBackendAPI {
   clearDatabase: () => Promise<Result<void>>
   getDatabasePath: () => Promise<Result<string>>
   getLogPath: () => Promise<Result<string>>
-  streamAIText: (messages: AIMessage[]) => Promise<Result<string>>
+  streamAIText: (messages: AIMessage[], options?: StreamAIOptions) => Promise<Result<string>>
   abortAIText: (sessionId: string) => Promise<Result<void>>
   getAIModels: (provider: AIProvider) => Promise<Result<string[]>>
   testAIProviderConnection: (config: AIConfig) => Promise<Result<boolean>>
+  // AI Settings v2 APIs
+  getAISettingsV2: () => Promise<Result<AISettingsV2>>
+  saveAISettingsV2: (settings: AISettingsV2) => Promise<Result<void>>
+  getAIPresets: () => Promise<Result<AIModelPreset[]>>
+  createAIPreset: (preset: Omit<AIModelPreset, 'id' | 'createdAt'>) => Promise<Result<string>>
+  updateAIPreset: (presetId: string, updates: Partial<Omit<AIModelPreset, 'id' | 'createdAt'>>) => Promise<Result<void>>
+  deleteAIPreset: (presetId: string) => Promise<Result<void>>
+  updateProviderConfig: (provider: AIProvider, config: AIProviderConfig | AzureProviderConfig) => Promise<Result<void>>
+  getProviderConfig: (provider: AIProvider) => Promise<Result<AIProviderConfig | AzureProviderConfig | undefined>>
   // MCP Server Management
   listMCPServers: () => Promise<Result<MCPServerWithStatus[]>>
   addMCPServer: (config: Omit<MCPServerConfig, 'id' | 'createdAt' | 'updatedAt'>) => Promise<Result<string>>

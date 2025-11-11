@@ -24,6 +24,15 @@ export class Server {
     abortAIText: (...args) => this._invoke('abortAIText', ...args),
     getAIModels: (...args) => this._invoke('getAIModels', ...args),
     testAIProviderConnection: (...args) => this._invoke('testAIProviderConnection', ...args),
+    // AI Settings v2 APIs
+    getAISettingsV2: (...args) => this._invoke('getAISettingsV2', ...args),
+    saveAISettingsV2: (...args) => this._invoke('saveAISettingsV2', ...args),
+    getAIPresets: (...args) => this._invoke('getAIPresets', ...args),
+    createAIPreset: (...args) => this._invoke('createAIPreset', ...args),
+    updateAIPreset: (...args) => this._invoke('updateAIPreset', ...args),
+    deleteAIPreset: (...args) => this._invoke('deleteAIPreset', ...args),
+    updateProviderConfig: (...args) => this._invoke('updateProviderConfig', ...args),
+    getProviderConfig: (...args) => this._invoke('getProviderConfig', ...args),
     // MCP Server Management
     listMCPServers: (...args) => this._invoke('listMCPServers', ...args),
     addMCPServer: (...args) => this._invoke('addMCPServer', ...args),
