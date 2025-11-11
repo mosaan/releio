@@ -1,4 +1,4 @@
-import { experimental_createMCPClient } from '@ai-sdk/mcp'
+import { experimental_createMCPClient, Experimental_StdioMCPTransport } from '@ai-sdk/mcp'
 import type { MCPServerConfig, MCPResource, MCPTool, MCPPrompt, Result } from '@common/types'
 import { ok, error } from '@common/result'
 import logger from '../logger'
@@ -19,6 +19,7 @@ export class MCPManager {
   /**
    * Initialize MCP Manager - automatically starts all enabled servers
    * Called during application startup
+   * Note: Individual server failures will not prevent initialization
    */
   async initialize(): Promise<void> {
     mcpLogger.info('Initializing MCP Manager...')
@@ -37,14 +38,16 @@ export class MCPManager {
           const result = await this.start(config.id)
           if (result.status === 'error') {
             mcpLogger.error(`Failed to start server ${config.name}: ${result.error}`)
+            // Continue with other servers even if one fails
           }
         }
       }
 
       mcpLogger.info('MCP Manager initialized successfully')
     } catch (err) {
+      // Log error but don't throw - allow backend process to continue
       mcpLogger.error('Failed to initialize MCP Manager', err)
-      throw err
+      mcpLogger.warn('Backend process will continue despite MCP initialization failure')
     }
   }
 
@@ -70,13 +73,14 @@ export class MCPManager {
         env: config.env ? Object.keys(config.env) : 'none'
       })
 
-      const client = experimental_createMCPClient({
-        transport: {
-          type: 'stdio',
-          command: config.command,
-          args: config.args,
-          env: config.env || undefined
-        }
+      const transport = new Experimental_StdioMCPTransport({
+        command: config.command,
+        args: config.args,
+        env: config.env || undefined
+      })
+
+      const client = await experimental_createMCPClient({
+        transport
       })
 
       this.clients.set(serverId, client)
@@ -84,7 +88,7 @@ export class MCPManager {
 
       // Try to get tools immediately to verify connection
       try {
-        const tools = await client.getTools({ includeResources: config.includeResources })
+        const tools = await client.tools()
         mcpLogger.info(`[START] Successfully connected to ${config.name}: ${tools.length} tool(s) available`)
       } catch (err) {
         mcpLogger.warn(`[START] Server ${config.name} started but failed to get tools:`, err)
@@ -326,7 +330,7 @@ export class MCPManager {
 
     try {
       mcpLogger.info(`Listing tools from server: ${config?.name || serverId}`)
-      const tools = await client.getTools({ includeResources: false })
+      const tools = await client.tools()
       mcpLogger.info(`Found ${tools.length} tool(s) from ${config?.name}`)
       return ok(tools as MCPTool[])
     } catch (err) {
@@ -378,7 +382,7 @@ export class MCPManager {
       mcpLogger.info(`Calling tool ${toolName} on server: ${config?.name || serverId}`)
 
       // Get the tool and execute it
-      const tools = await client.getTools({ includeResources: false })
+      const tools = await client.tools()
       const tool = tools.find((t) => t.name === toolName)
 
       if (!tool) {
@@ -399,7 +403,7 @@ export class MCPManager {
 
   /**
    * Get all tools from all active servers (Phase 3)
-   * Respects the includeResources setting for each server
+   * Returns tools in AI SDK format (already converted by the MCP client)
    */
   async getAllTools(): Promise<MCPTool[]> {
     const allTools: MCPTool[] = []
@@ -414,10 +418,8 @@ export class MCPManager {
       }
 
       try {
-        mcpLogger.info(`[TOOLS] Getting tools from "${config.name}" (includeResources: ${config.includeResources})`)
-        const tools = await client.getTools({
-          includeResources: config.includeResources
-        })
+        mcpLogger.info(`[TOOLS] Getting tools from "${config.name}"`)
+        const tools = await client.tools()
 
         mcpLogger.info(`[TOOLS] Retrieved ${tools.length} tool(s) from "${config.name}"`)
         if (tools.length > 0) {
