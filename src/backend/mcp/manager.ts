@@ -1,4 +1,4 @@
-import { experimental_createMCPClient } from 'ai'
+import { experimental_createMCPClient } from '@ai-sdk/mcp'
 import type { MCPServerConfig, MCPResource, MCPTool, MCPPrompt, Result } from '@common/types'
 import { ok, error } from '@common/result'
 import logger from '../logger'
