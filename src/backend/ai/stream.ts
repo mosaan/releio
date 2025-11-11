@@ -36,10 +36,9 @@ export async function streamSessionText(
       model,
       messages,
       temperature: 0.7,
-      maxTokens: 1000,
-      abortSignal: session.abortSignal,
-      // Add MCP tools if available
-      ...(tools && tools.length > 0 ? { tools } : {})
+      abortSignal: session.abortSignal
+      // Note: MCP tools integration requires AI SDK update to properly support tool calling
+      // ...(tools && tools.length > 0 ? { tools: Object.fromEntries(tools.map(t => [t.name, t])) } : {})
     })
 
     logger.info(`AI response streaming started with ${config.provider} for session: ${session.id}`)
