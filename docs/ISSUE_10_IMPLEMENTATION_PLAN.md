@@ -348,6 +348,17 @@ This document will be updated after each phase to track:
 - Implemented per-provider save, test, and clear functionality
 - Display configured presets section at bottom
 
+**Commit dce6bbe**: Replaced custom Tabs with shadcn/ui standard (by user)
+- Replaced manually created Tabs component with shadcn/ui standard
+- Used `pnpm run shadcn add tabs` for consistency with other components
+- Maintains `data-slot` attributes and design patterns
+- No functional changes, architectural alignment only
+
+**Commit 626a517**: Added network error handling guidelines
+- Updated CLAUDE.md with package installation error handling rules
+- Documented requirement to consult user before custom implementations
+- Prevents architectural deviations from network errors
+
 ## Technical Decisions
 
 ### Why Tabs instead of Accordion?
