@@ -149,6 +149,7 @@ export interface MCPServerStatus {
   serverId: string
   status: 'connected' | 'stopped' | 'error'
   error?: string
+  errorDetails?: string
   updatedAt: string
 }
 

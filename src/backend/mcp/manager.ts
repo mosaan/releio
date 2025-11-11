@@ -16,14 +16,90 @@ import { mcpServers } from '../db/schema'
 import { eq } from 'drizzle-orm'
 import { randomUUID } from 'crypto'
 import { EventEmitter } from 'events'
+import type { ChildProcess } from 'child_process'
 
 const mcpLogger = logger.child('mcp')
 
 type MCPClient = experimental_MCPClient
 
+class InstrumentedStdioMCPTransport extends Experimental_StdioMCPTransport {
+  private stderrLines: string[] = []
+  private exitInfo: string | null = null
+
+  constructor(config: { command: string; args?: string[]; env?: Record<string, string> }) {
+    super({
+      ...config,
+      stderr: 'pipe'
+    })
+  }
+
+  override async start(): Promise<void> {
+    await super.start()
+    this.attachDebugListeners()
+  }
+
+  getDebugDetails(): string | null {
+    const parts: string[] = []
+    if (this.exitInfo) {
+      parts.push(this.exitInfo)
+    }
+    if (this.stderrLines.length > 0) {
+      parts.push(`stderr:\n${this.stderrLines.join('\n')}`)
+    }
+    if (parts.length === 0) {
+      return null
+    }
+    return parts.join('\n')
+  }
+
+  private attachDebugListeners(): void {
+    const child = this.getChildProcess()
+    if (!child) {
+      return
+    }
+
+    if (child.stderr) {
+      child.stderr.setEncoding('utf8')
+      child.stderr.on('data', (chunk: Buffer | string) => {
+        this.captureLines(chunk.toString())
+      })
+    }
+
+    const recordExit = (code: number | null, signal: NodeJS.Signals | null): void => {
+      const codeText = code === null ? 'null' : code.toString()
+      this.exitInfo = `Process exited with code ${codeText}${signal ? ` (signal: ${signal})` : ''}`
+    }
+
+    child.once('exit', recordExit)
+    child.once('close', recordExit)
+    child.once('error', (err) => {
+      this.exitInfo = `Process error: ${err.message}`
+    })
+  }
+
+  private captureLines(chunk: string): void {
+    const lines = chunk
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+
+    for (const line of lines) {
+      this.stderrLines.push(line)
+      if (this.stderrLines.length > 10) {
+        this.stderrLines.shift()
+      }
+    }
+  }
+
+  private getChildProcess(): ChildProcess | undefined {
+    return (this as unknown as { process?: ChildProcess }).process
+  }
+}
+
 type RuntimeServerStatus = {
   status: 'connected' | 'stopped' | 'error'
   error?: string
+  details?: string | null
   updatedAt: Date
 }
 
@@ -41,6 +117,7 @@ export class MCPManager {
 
     const initialStatus: RuntimeServerStatus = {
       status: 'stopped',
+      details: undefined,
       updatedAt: new Date()
     }
     this.serverStatus.set(serverId, initialStatus)
@@ -53,6 +130,7 @@ export class MCPManager {
       serverId,
       status: runtimeStatus.status,
       error: runtimeStatus.error,
+      errorDetails: runtimeStatus.details ?? undefined,
       updatedAt: runtimeStatus.updatedAt.toISOString()
     }
   }
@@ -61,11 +139,16 @@ export class MCPManager {
     serverId: string,
     status: RuntimeServerStatus['status'],
     error?: string,
-    options?: { silent?: boolean }
+    options?: { silent?: boolean; details?: string | null }
   ): void {
+    const previous = this.serverStatus.get(serverId)
+    const nextDetails =
+      status === 'error' ? options?.details ?? previous?.details ?? null : undefined
+
     const nextStatus: RuntimeServerStatus = {
       status,
       error,
+      details: nextDetails,
       updatedAt: new Date()
     }
     this.serverStatus.set(serverId, nextStatus)
@@ -136,17 +219,17 @@ export class MCPManager {
       return ok(undefined)
     }
 
+    const transport = new InstrumentedStdioMCPTransport({
+      command: config.command,
+      args: config.args,
+      env: config.env || undefined
+    })
+
     try {
       mcpLogger.info(`[START] Starting MCP server: ${config.name}`, {
         command: config.command,
         args: config.args,
         env: config.env ? Object.keys(config.env) : 'none'
-      })
-
-      const transport = new Experimental_StdioMCPTransport({
-        command: config.command,
-        args: config.args,
-        env: config.env || undefined
       })
 
       const client = await experimental_createMCPClient({
@@ -169,8 +252,10 @@ export class MCPManager {
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err)
       mcpLogger.error(`Failed to start server ${config.name}:`, err)
-      this.setServerStatus(serverId, 'error', errMsg)
-      return error(`Failed to start server: ${errMsg}`)
+      const debugDetails = transport.getDebugDetails()
+      const combinedError = debugDetails ? `${errMsg}\n${debugDetails}` : errMsg
+      this.setServerStatus(serverId, 'error', combinedError, { details: debugDetails })
+      return error(`Failed to start server: ${combinedError}`)
     }
   }
 

@@ -399,15 +399,26 @@ export function MCPSettings({ className }: MCPSettingsProps): React.JSX.Element 
                           {formatStatusTimestamp(server.runtimeStatus.updatedAt)}
                         </div>
                       </div>
-                      {server.runtimeStatus.status === 'error' && server.runtimeStatus.error && (
+                      {server.runtimeStatus.status === 'error' && (
                         <div className="mt-3 flex items-start gap-2 rounded-md border border-red-200 bg-red-50 p-3 text-xs text-red-800">
                           <AlertCircle className="h-4 w-4 flex-shrink-0" />
-                          <div>
-                            <p className="font-medium">Last error</p>
-                            <p className="mt-1">{server.runtimeStatus.error}</p>
-                            <p className="mt-1 text-[11px] opacity-80">
-                              Reported at {formatStatusTimestamp(server.runtimeStatus.updatedAt)}
-                            </p>
+                          <div className="space-y-2 w-full">
+                            <div>
+                              <p className="font-medium">Last error</p>
+                              {server.runtimeStatus.error && (
+                                <p className="mt-1 whitespace-pre-wrap text-xs">
+                                  {server.runtimeStatus.error}
+                                </p>
+                              )}
+                              <p className="mt-1 text-[11px] opacity-80">
+                                Reported at {formatStatusTimestamp(server.runtimeStatus.updatedAt)}
+                              </p>
+                            </div>
+                            {server.runtimeStatus.errorDetails && (
+                              <pre className="w-full whitespace-pre-wrap rounded border border-red-100 bg-white/40 p-2 text-[11px] text-red-900 overflow-x-auto">
+                                {server.runtimeStatus.errorDetails}
+                              </pre>
+                            )}
                           </div>
                         </div>
                       )}
