@@ -235,6 +235,7 @@ handleAll(
 ```typescript
 export class Handler {
   private _rendererConnection: Connection
+  private _mcpManager: MCPManager
 
   async streamAIText(messages: AIMessage[]): Promise<Result<string>> {
     // 1. データベースからAI設定を取得
@@ -262,13 +263,23 @@ export class Handler {
       apiKey
     }
 
-    // 5. ストリーミング開始（コールバックでイベントを送信）
-    const sessionId = await streamText(config, messages, (channel: string, event: AppEvent) => {
-      // レンダラにイベントを直接送信
-      this._rendererConnection.publishEvent(channel, event)
-    })
+    // 5. MCPツールを取得
+    const mcpTools = await this._mcpManager.getAllTools()
+    const toolCount = Object.keys(mcpTools).length
+    logger.info(`Streaming AI text with ${toolCount} MCP tool(s) available`)
 
-    // 6. セッションIDを返す（invoke のレスポンス）
+    // 6. ストリーミング開始（コールバックでイベントを送信、ツールも渡す）
+    const sessionId = await streamText(
+      config,
+      messages,
+      (channel: string, event: AppEvent) => {
+        // レンダラにイベントを直接送信
+        this._rendererConnection.publishEvent(channel, event)
+      },
+      toolCount > 0 ? mcpTools : undefined  // MCPツールを渡す
+    )
+
+    // 7. セッションIDを返す（invoke のレスポンス）
     return ok(sessionId)
   }
 }
@@ -289,25 +300,36 @@ export async function streamSessionText(
   messages: AIMessage[],
   session: StreamSession,
   publishEvent: (channel: string, event: AppEvent) => void,
-  cb: () => void
+  cb: () => void,
+  tools?: Record<string, any>  // MCPツールを受け取る
 ): Promise<void> {
   try {
     // 1. AIプロバイダーのモデルを作成
     const model = createModel(config.provider, config.apiKey, config.model)
 
+    // MCPツールの可用性をログ出力
+    const toolCount = tools ? Object.keys(tools).length : 0
+    if (toolCount > 0) {
+      logger.info(`[MCP] ${toolCount} tool(s) available for session ${session.id}`)
+      Object.entries(tools!).forEach(([name, tool]) => {
+        logger.info(`[MCP] Tool: ${name} - ${tool.description || 'No description'}`)
+      })
+    }
+
     logger.info(`AI response streaming started with ${config.provider}`)
 
-    // 2. AI SDKでストリーミング開始
+    // 2. AI SDKでストリーミング開始（ツールとマルチステップ実行を有効化）
     const result = streamText({
       model,
       messages,
       temperature: 0.7,
-      maxTokens: 1000,
-      abortSignal: session.abortSignal
+      abortSignal: session.abortSignal,
+      stopWhen: stepCountIs(10),  // マルチステップツール呼び出し（最大10ステップ）
+      ...(tools && toolCount > 0 ? { tools } : {})  // MCPツールを渡す
     })
 
-    // 3. チャンクを順次処理
-    for await (const chunk of result.textStream) {
+    // 3. fullStream でチャンクとツールイベントを順次処理
+    for await (const chunk of result.fullStream) {
       // 中止されていないかチェック
       if (session.abortSignal.aborted) {
         publishEvent('aiChatAborted', {
@@ -317,11 +339,46 @@ export async function streamSessionText(
         return
       }
 
-      // チャンクをレンダラに送信（イベント通知）
-      publishEvent('aiChatChunk', {
-        type: EventType.Message,
-        payload: { sessionId: session.id, chunk }
-      })
+      // チャンクタイプ別に処理
+      switch (chunk.type) {
+        case 'text-delta':
+          // テキストチャンクをレンダラに送信
+          publishEvent('aiChatChunk', {
+            type: EventType.Message,
+            payload: { sessionId: session.id, chunk: chunk.text }
+          })
+          break
+
+        case 'tool-call':
+          // ツール呼び出しをログ出力
+          logger.info(`[MCP] Tool called: ${chunk.toolName}`, {
+            toolCallId: chunk.toolCallId,
+            input: chunk.input
+          })
+          break
+
+        case 'tool-result':
+          // ツール結果をログ出力
+          logger.info(`[MCP] Tool result received: ${chunk.toolName}`, {
+            toolCallId: chunk.toolCallId,
+            output: typeof chunk.output === 'string'
+              ? chunk.output.substring(0, 200)  // 長い出力は切り詰め
+              : chunk.output
+          })
+          break
+
+        case 'finish':
+          // 完了をログ出力
+          logger.info(`[AI] Stream finished`, {
+            finishReason: chunk.finishReason,
+            usage: chunk.totalUsage
+          })
+          break
+
+        case 'error':
+          logger.error(`[AI] Stream error:`, chunk.error)
+          break
+      }
     }
 
     // 4. ストリーム終了を通知
@@ -330,7 +387,7 @@ export async function streamSessionText(
         type: EventType.Message,
         payload: { sessionId: session.id }
       })
-      logger.info('AI response streaming completed successfully')
+      logger.info('✅ AI response streaming completed successfully')
     }
   } catch (error) {
     // エラー処理
@@ -346,8 +403,13 @@ export async function streamSessionText(
 ```
 
 **ポイント**:
+- `tools` パラメータでMCPツールを受け取る（`Record<string, Tool>` 形式）
+- `stopWhen: stepCountIs(10)` でマルチステップツール呼び出しを有効化
+- `fullStream` を使用してツールイベント（`tool-call`, `tool-result`）も取得
 - `for await` でチャンクを1つずつ受信
+- チャンクタイプ別に処理（`text-delta`, `tool-call`, `tool-result`, `finish`, `error`）
 - 各チャンクをイベントとしてレンダラに送信
+- ツール呼び出しと結果を詳細にログ出力
 - 完了/エラー/中止のイベントも送信
 
 ### ステップ7: Connection.publishEvent() によるイベント送信
@@ -508,6 +570,7 @@ sequenceDiagram
     participant Port as MessagePort
     participant Conn2 as Connection<br/>(Backend側)
     participant Handler as Handler<br/>(handler.ts)
+    participant MCP as MCP Manager
     participant Stream as AI Stream<br/>(stream.ts)
     participant AI as AI Provider
 
@@ -526,7 +589,10 @@ sequenceDiagram
 
     Note over Handler: 1. DB から設定取得<br/>2. AI config 作成
 
-    Handler->>Stream: streamSessionText(config, messages, publishEvent)
+    Handler->>MCP: getAllTools()
+    MCP-->>Handler: tools (Record<string, Tool>)
+
+    Handler->>Stream: streamSessionText(config, messages, publishEvent, tools)
 
     Note over Handler,Conn1: Result返却 {status:'ok', value:sessionId}
 
@@ -536,22 +602,35 @@ sequenceDiagram
 
     Note over UI: receiveStream() で<br/>イベント待機開始
 
-    Stream->>AI: streamText() 開始
+    Stream->>AI: streamText() 開始<br/>(ツール情報付き)
     activate AI
 
     loop ストリーミング
-        AI-->>Stream: chunk 受信
-        Stream->>Conn2: publishEvent('aiChatChunk', {sessionId, chunk})
-        Conn2->>Port: postMessage(eventMsg)
-        Port->>Conn1: message event
+        AI-->>Stream: chunk 受信<br/>(text-delta / tool-call / tool-result)
 
-        Note over Conn1: onEvent リスナーが受信
+        alt テキストチャンクの場合
+            Stream->>Conn2: publishEvent('aiChatChunk', {sessionId, chunk})
+            Conn2->>Port: postMessage(eventMsg)
+            Port->>Conn1: message event
 
-        Conn1->>UI: handleChunk(chunk)
+            Note over Conn1: onEvent リスナーが受信
 
-        Note over UI: pendingChunks.push(chunk)<br/>resolveYieldLoopBlocker()
+            Conn1->>UI: handleChunk(chunk)
 
-        UI-->>User: yield chunk<br/>(リアルタイム表示更新)
+            Note over UI: pendingChunks.push(chunk)<br/>resolveYieldLoopBlocker()
+
+            UI-->>User: yield chunk<br/>(リアルタイム表示更新)
+        end
+
+        alt ツール呼び出しの場合
+            Note over Stream: [MCP] Tool called:<br/>toolName, input をログ出力
+            AI->>MCP: ツール実行要求
+            activate MCP
+            MCP-->>AI: ツール実行結果
+            deactivate MCP
+            Note over Stream: [MCP] Tool result:<br/>toolName, output をログ出力
+            Note over AI: マルチステップ実行<br/>(最大10ステップ)
+        end
     end
 
     AI-->>Stream: ストリーム完了

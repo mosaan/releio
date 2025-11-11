@@ -131,12 +131,14 @@ pnpm run build
 
 ### AI統合
 
-- **AI SDK**: ストリーミング対応のAI統合ライブラリ
+- **AI SDK v5.0.92**: ストリーミング対応のAI統合ライブラリ
+- **@ai-sdk/mcp v0.0.8**: MCP (Model Context Protocol) サーバー接続
 - **Assistant UI**: チャットインターフェースコンポーネント
 - **対応プロバイダー**:
   - Anthropic (Claude)
   - OpenAI (GPT)
   - Google (Gemini)
+- **MCP統合**: 外部ツール呼び出しとマルチステップ実行
 
 ### UIコンポーネント
 
@@ -152,7 +154,7 @@ pnpm run build
 graph TB
     Main["Main Process<br/>(src/main/)<br/><br/>• アプリライフサイクル<br/>• ウィンドウ管理<br/>• IPC通信のハブ"]
 
-    Backend["Backend Process<br/>(src/backend/)<br/><br/>• AI処理<br/>• ストリーミング<br/>• DB操作<br/>• 設定管理<br/>• ログ管理"]
+    Backend["Backend Process<br/>(src/backend/)<br/><br/>• AI処理<br/>• ストリーミング<br/>• MCP サーバー管理<br/>• ツール呼び出し<br/>• DB操作<br/>• 設定管理<br/>• ログ管理"]
 
     Renderer["Renderer Process<br/>(src/renderer/)<br/><br/>• React UI<br/>• チャット画面<br/>• ユーザー操作<br/>• イベント処理"]
 
@@ -187,6 +189,9 @@ Electronアプリケーションのエントリーポイント。
 - **責務**:
   - AI プロバイダーの管理と呼び出し
   - ストリーミングレスポンスの処理
+  - MCP サーバーのライフサイクル管理
+  - 外部ツール呼び出しの処理
+  - マルチステップツール実行
   - データベース操作
   - アプリケーション設定の管理
   - ログ記録
@@ -196,7 +201,9 @@ Electronアプリケーションのエントリーポイント。
   backend/
   ├── ai/              # AI関連
   │   ├── factory.ts   # プロバイダーファクトリー
-  │   └── streaming.ts # ストリーミング処理
+  │   └── stream.ts    # ストリーミング処理
+  ├── mcp/             # MCP統合
+  │   └── manager.ts   # MCPサーバー管理
   ├── db/              # データベース
   │   ├── index.ts     # DB接続
   │   └── schema.ts    # スキーマ定義
@@ -298,6 +305,7 @@ sequenceDiagram
     participant Main as Main Process
     participant Backend as Backend Process
     participant Settings as 設定管理
+    participant MCP as MCP Manager
     participant AI as AI Provider<br/>(Claude/GPT/Gemini)
     participant DB as Database
 
@@ -309,7 +317,10 @@ sequenceDiagram
     Backend->>Settings: 現在のプロバイダー取得
     Settings-->>Backend: プロバイダー情報
 
-    Backend->>AI: AI SDK経由でリクエスト
+    Backend->>MCP: MCP ツール取得
+    MCP-->>Backend: 利用可能なツール (Record<string, Tool>)
+
+    Backend->>AI: AI SDK経由でリクエスト<br/>(ツール情報付き)
     activate AI
 
     loop ストリーミング
@@ -318,6 +329,14 @@ sequenceDiagram
         Main-->>Preload: チャンク転送
         Preload-->>UI: チャンク転送
         UI-->>User: リアルタイム表示更新
+
+        opt ツール呼び出しが必要
+            AI->>MCP: ツール実行要求
+            activate MCP
+            MCP-->>AI: ツール実行結果
+            deactivate MCP
+            Note over AI: マルチステップ実行<br/>(最大10ステップ)
+        end
     end
 
     AI-->>Backend: ストリーミング完了
@@ -1075,6 +1094,10 @@ logger.transports.console.level = 'debug'
   - invoke/handle と publishEvent/onEvent パターン
   - AsyncGenerator によるストリーミング実装
   - デバッグ方法
+- **[MCP統合の設計](./MCP_INTEGRATION_DESIGN.md)** - Model Context Protocol サーバー統合の設計と実装
+  - MCP サーバーのライフサイクル管理
+  - ツール呼び出しとマルチステップ実行
+  - AI SDK v5 との統合
 - **[AI プロバイダーの拡張](./EXTENDING_AI_PROVIDERS.md)** - 新しい AI プロバイダーを追加する方法
 
 ## 次のステップ
