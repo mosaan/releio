@@ -10,10 +10,15 @@ export class Backend {
 
   constructor() {
     const userDataPath = getBasePath()
-    this._process = utilityProcess.fork(backendPath, ['--user-data-path', userDataPath])
+    this._process = utilityProcess.fork(backendPath, ['--user-data-path', userDataPath], {
+      stdio: 'pipe' // Enable stdout/stderr capture
+    })
 
     // Setup listener for logs from backend process
     this._setupLogHandler()
+
+    // Setup error and exit handlers
+    this._setupProcessMonitoring()
   }
 
   /**
@@ -36,6 +41,41 @@ export class Backend {
         }
       }
     })
+  }
+
+  /**
+   * Setup monitoring for backend process lifecycle
+   */
+  private _setupProcessMonitoring(): void {
+    // Log when process spawns
+    this._process.on('spawn', () => {
+      logger.info('Backend process spawned successfully')
+    })
+
+    // Log when process exits
+    this._process.on('exit', (code) => {
+      logger.error('Backend process exited unexpectedly', { exitCode: code })
+    })
+
+    // Capture stdout
+    if (this._process.stdout) {
+      this._process.stdout.on('data', (data) => {
+        const output = data.toString().trim()
+        if (output) {
+          logger.info('[backend stdout]', output)
+        }
+      })
+    }
+
+    // Capture stderr - this is critical for debugging crashes
+    if (this._process.stderr) {
+      this._process.stderr.on('data', (data) => {
+        const output = data.toString().trim()
+        if (output) {
+          logger.error('[backend stderr]', output)
+        }
+      })
+    }
   }
 
   connectRenderer(renderer: WebContents): void {

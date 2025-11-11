@@ -98,9 +98,60 @@ export interface RendererBackendAPI {
   abortAIText: (sessionId: string) => Promise<Result<void>>
   getAIModels: (provider: AIProvider) => Promise<Result<string[]>>
   testAIProviderConnection: (config: AIConfig) => Promise<Result<boolean>>
+  // Proxy settings
+  getProxySettings: () => Promise<Result<ProxySettings>>
+  setProxySettings: (settings: ProxySettings) => Promise<Result<void>>
+  getSystemProxySettings: () => Promise<Result<ProxySettings>>
+  // Certificate settings
+  getCertificateSettings: () => Promise<Result<CertificateSettings>>
+  setCertificateSettings: (settings: CertificateSettings) => Promise<Result<void>>
+  getSystemCertificateSettings: () => Promise<Result<CertificateSettings>>
+  // Connection tests
+  testProxyConnection: (settings: ProxySettings) => Promise<Result<ConnectionTestResult>>
+  testCertificateConnection: (settings: CertificateSettings) => Promise<Result<ConnectionTestResult>>
+  testCombinedConnection: (
+    proxySettings: ProxySettings,
+    certSettings: CertificateSettings
+  ) => Promise<Result<ConnectionTestResult>>
+  testFullConnection: () => Promise<Result<ConnectionTestResult, string>>
 }
 
 export interface RendererMainAPI {
   ping: () => Promise<Result<string>>
   openFolder: (folderPath: string) => Promise<Result<void>>
+}
+
+// Proxy and Certificate Types
+
+export type ProxyMode = 'system' | 'custom' | 'none'
+
+export interface ProxySettings {
+  mode: ProxyMode
+  httpProxy?: string
+  httpsProxy?: string
+  noProxy?: string[]
+  username?: string
+  password?: string
+}
+
+export type CertificateMode = 'system' | 'custom' | 'none'
+
+export interface CertificateSettings {
+  mode: CertificateMode
+  customCertificates?: string[]
+  rejectUnauthorized?: boolean
+}
+
+// Connection Test Types
+
+export interface ConnectionTestResult {
+  success: boolean
+  message: string
+  details?: {
+    url?: string
+    statusCode?: number
+    responseTime?: number
+    error?: string
+    errorType?: 'proxy' | 'certificate' | 'network' | 'timeout' | 'unknown'
+  }
 }

@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react'
-import { ArrowLeft, Trash2, FolderOpen } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { ArrowLeft, Trash2, FolderOpen, Wifi, Loader2, CheckCircle, XCircle } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
 import { isOk, isError } from '@common/result'
 import { logger } from '@renderer/lib/logger'
+import type { ConnectionTestResult } from '@common/types'
 import {
   Card,
   CardContent,
@@ -12,6 +13,8 @@ import {
   CardFooter
 } from '@renderer/components/ui/card'
 import { AISettings } from './AISettings'
+import { ProxySettings } from './ProxySettings'
+import { CertificateSettings } from './CertificateSettings'
 
 interface SettingsProps {
   onBack: () => void
@@ -22,6 +25,13 @@ export function Settings({ onBack }: SettingsProps): React.JSX.Element {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [databasePath, setDatabasePath] = useState<string>('')
   const [logPath, setLogPath] = useState<string>('')
+
+  // Connection test state
+  const [isTesting, setIsTesting] = useState(false)
+  const [testSuccess, setTestSuccess] = useState(false)
+  const [testError, setTestError] = useState(false)
+  const [testMessage, setTestMessage] = useState<string>('')
+
   useEffect(() => {
     const loadPaths = async (): Promise<void> => {
       const [dbPathResult, logPathResult] = await Promise.all([
@@ -114,6 +124,67 @@ export function Settings({ onBack }: SettingsProps): React.JSX.Element {
     setIsClearingDatabase(false)
   }
 
+  const testConnection = useCallback(async (): Promise<void> => {
+    setIsTesting(true)
+    setTestSuccess(false)
+    setTestError(false)
+    setTestMessage('')
+
+    logger.info('Testing network connection with current proxy and certificate settings')
+
+    const result = await window.backend.testFullConnection()
+
+    if (isOk(result)) {
+      const testResult: ConnectionTestResult = result.value
+
+      if (testResult.success) {
+        setTestSuccess(true)
+        const detailsStr = testResult.details?.responseTime
+          ? ` (${testResult.details.responseTime}ms)`
+          : ''
+        setTestMessage(`${testResult.message}${detailsStr}`)
+        logger.info('Connection test succeeded', { message: testResult.message })
+
+        // Auto-clear success message after 5 seconds
+        setTimeout(() => {
+          setTestSuccess(false)
+          setTestMessage('')
+        }, 5000)
+      } else {
+        setTestError(true)
+        let errorDetails = ''
+        if (testResult.details) {
+          const { errorType, statusCode, responseTime } = testResult.details
+          if (errorType) errorDetails += `\nError type: ${errorType}`
+          if (statusCode) errorDetails += `\nStatus code: ${statusCode}`
+          if (responseTime) errorDetails += `\nResponse time: ${responseTime}ms`
+        }
+        setTestMessage(testResult.message + errorDetails)
+        logger.error('Connection test failed', {
+          message: testResult.message,
+          details: testResult.details
+        })
+
+        // Auto-clear error message after 8 seconds
+        setTimeout(() => {
+          setTestError(false)
+          setTestMessage('')
+        }, 8000)
+      }
+    } else {
+      setTestError(true)
+      setTestMessage('Failed to perform connection test: ' + result.error)
+      logger.error('Connection test request failed', { error: result.error })
+
+      setTimeout(() => {
+        setTestError(false)
+        setTestMessage('')
+      }, 8000)
+    }
+
+    setIsTesting(false)
+  }, [])
+
   return (
     <div className="h-screen bg-gray-50 p-8 overflow-auto">
       <div className="max-w-2xl mx-auto">
@@ -149,6 +220,70 @@ export function Settings({ onBack }: SettingsProps): React.JSX.Element {
           </Card>
 
           <AISettings className="shadow-sm" />
+
+          <ProxySettings className="shadow-sm" />
+
+          <CertificateSettings className="shadow-sm" />
+
+          <Card className="shadow-sm">
+            <CardHeader>
+              <CardTitle>Network Connection Test</CardTitle>
+              <CardDescription>
+                Test your network connectivity with current proxy and certificate settings
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-gray-600 mb-4">
+                This will verify that your proxy and certificate settings are working correctly by
+                making a test connection to google.com.
+              </p>
+              <Button
+                onClick={testConnection}
+                disabled={isTesting}
+                variant={testSuccess ? 'default' : testError ? 'destructive' : 'outline'}
+                className={
+                  testSuccess
+                    ? 'bg-green-600 hover:bg-green-700 text-white'
+                    : testError
+                      ? 'bg-orange-500 hover:bg-orange-600 text-white'
+                      : ''
+                }
+              >
+                {isTesting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Testing...
+                  </>
+                ) : testSuccess ? (
+                  <>
+                    <CheckCircle className="mr-2 h-4 w-4" />
+                    Success
+                  </>
+                ) : testError ? (
+                  <>
+                    <XCircle className="mr-2 h-4 w-4" />
+                    Failed
+                  </>
+                ) : (
+                  <>
+                    <Wifi className="mr-2 h-4 w-4" />
+                    Test Connection
+                  </>
+                )}
+              </Button>
+              {testMessage && (
+                <div
+                  className={`mt-4 p-3 rounded text-sm ${
+                    testSuccess
+                      ? 'bg-green-50 text-green-800 border border-green-200'
+                      : 'bg-orange-50 text-orange-800 border border-orange-200 whitespace-pre-wrap'
+                  }`}
+                >
+                  {testMessage}
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
           <Card className="shadow-sm">
             <CardHeader>

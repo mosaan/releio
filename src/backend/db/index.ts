@@ -14,15 +14,20 @@ interface MigrationStatus {
   totalMigrations: number
 }
 
-export function connectDatabase(): ReturnType<typeof drizzle> {
-  const dbPath = getDatabasePath()
+export function connectDatabase(dbPath?: string): ReturnType<typeof drizzle> {
+  // Allow override for testing (e.g., ':memory:')
+  const actualDbPath = dbPath || getDatabasePath()
 
-  const dbDir = path.dirname(dbPath)
-  if (!fs.existsSync(dbDir)) {
-    fs.mkdirSync(dbDir, { recursive: true })
+  // Skip directory creation for in-memory databases
+  if (!actualDbPath.startsWith(':memory:')) {
+    const dbDir = path.dirname(actualDbPath)
+    if (!fs.existsSync(dbDir)) {
+      fs.mkdirSync(dbDir, { recursive: true })
+    }
   }
 
-  const client = createClient({ url: `file:${dbPath}` })
+  const url = actualDbPath.startsWith(':memory:') ? actualDbPath : `file:${actualDbPath}`
+  const client = createClient({ url })
   return drizzle({ client })
 }
 
@@ -61,13 +66,13 @@ export function destroy(): void {
 }
 
 function _getMigrationsFolder(): string | null {
-  // In development, use the resources folder directly
+  // In development/test, use the resources folder directly
   // In production, use the app.asar.unpacked path
-  const isDev = process.env.NODE_ENV === 'development'
+  const isDev = process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test' || process.env.VITEST
 
   const migrationsPath = isDev
     ? path.join(process.cwd(), 'resources', 'db', 'migrations')
-    : path.join(process.resourcesPath, 'db', 'migrations')
+    : path.join(process.resourcesPath || process.cwd(), 'db', 'migrations')
 
   return fs.existsSync(migrationsPath) ? migrationsPath : null
 }
@@ -112,4 +117,57 @@ async function _getMigrationStatus(
   }
 }
 
-export const db = connectDatabase()
+/**
+ * Lazy-initialized database instance
+ */
+let _dbInstance: ReturnType<typeof drizzle> | null = null
+
+/**
+ * Get the singleton database instance
+ *
+ * In production: connects to the configured database path
+ * In tests: can be overridden with setTestDatabase()
+ */
+export function getDatabase(): ReturnType<typeof drizzle> {
+  if (!_dbInstance) {
+    try {
+      _dbInstance = connectDatabase()
+    } catch (error) {
+      // In test environment, getDatabasePath() may fail if paths are not configured
+      // Fall back to in-memory database for tests
+      if (process.env.NODE_ENV === 'test' || process.env.VITEST) {
+        _dbInstance = connectDatabase(':memory:')
+      } else {
+        throw error
+      }
+    }
+  }
+  return _dbInstance
+}
+
+/**
+ * Override the database instance for testing
+ *
+ * @param database - Test database instance or null to reset
+ */
+export function setTestDatabase(database: ReturnType<typeof drizzle> | null): void {
+  if (_dbInstance && database !== _dbInstance) {
+    // Close existing connection before replacing
+    try {
+      _dbInstance.$client.close()
+    } catch {
+      // Ignore close errors
+    }
+  }
+  _dbInstance = database
+}
+
+/**
+ * Default database instance for backward compatibility
+ * Use getDatabase() for better testability
+ */
+export const db = new Proxy({} as ReturnType<typeof drizzle>, {
+  get(_target, prop) {
+    return getDatabase()[prop]
+  }
+})

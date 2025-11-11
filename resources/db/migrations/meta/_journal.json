@@ -8,6 +8,13 @@
       "when": 1752103859882,
       "tag": "0000_late_power_pack",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1731142860000,
+      "tag": "0001_add_default_proxy_certificate_settings",
+      "breakpoints": true
     }
   ]
 }

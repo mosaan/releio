@@ -9,11 +9,10 @@ export { listAvailableModel } from './factory'
 
 export async function testConnection(config: AIConfig): Promise<boolean> {
   try {
-    const aiModel = createModel(config.provider, config.apiKey, config.model)
+    const aiModel = await createModel(config.provider, config.apiKey, config.model)
     const result = _streamText({
       model: aiModel,
-      messages: [{ role: 'user', content: 'Test' }],
-      maxTokens: 5
+      messages: [{ role: 'user', content: 'Test' }]
     })
 
     for await (const chunk of result.textStream) {

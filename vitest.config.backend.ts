@@ -1,5 +1,9 @@
 import { defineConfig } from 'vitest/config'
 import { resolve } from 'path'
+import { fileURLToPath } from 'url'
+
+// Get __dirname equivalent in ESM
+const __dirname = fileURLToPath(new URL('.', import.meta.url))
 
 // Custom plugin to handle ?asset imports like electron-vite does during test
 function assetPlugin() {
@@ -20,7 +24,7 @@ function assetPlugin() {
 
         // Handle @resources alias
         if (cleanPath.startsWith('@resources/')) {
-          resolvedPath = resolve(cleanPath.replace('@resources/', 'resources/'))
+          resolvedPath = resolve(__dirname, cleanPath.replace('@resources/', 'resources/'))
         }
 
         // For ?asset imports, return the resolved absolute path as the default export
@@ -34,9 +38,9 @@ function assetPlugin() {
 export default defineConfig({
   resolve: {
     alias: {
-      '@backend': resolve('src/backend'),
-      '@common': resolve('src/common'),
-      '@resources': resolve('resources')
+      '@backend': resolve(__dirname, 'src/backend'),
+      '@common': resolve(__dirname, 'src/common'),
+      '@resources': resolve(__dirname, 'resources')
     }
   },
   plugins: [assetPlugin()],
