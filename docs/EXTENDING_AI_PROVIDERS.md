@@ -26,10 +26,16 @@ graph TB
 
 **対応プロバイダー**: OpenAI, Anthropic (Claude), Google (Gemini)
 
+**使用技術**:
+- **Vercel AI SDK v5.0.92** - AI プロバイダーとの統合
+- **@ai-sdk/mcp v0.0.8** - MCP サーバー統合（ツール呼び出し）
+
 **主要ファイル**:
 - [src/common/types.ts](../src/common/types.ts) - `AIProvider` 型定義
 - [src/backend/ai/factory.ts](../src/backend/ai/factory.ts) - プロバイダーファクトリー
+- [src/backend/ai/stream.ts](../src/backend/ai/stream.ts) - ストリーミングとツール実行
 - [src/backend/handler.ts](../src/backend/handler.ts) - API ハンドラー
+- [src/backend/mcp/manager.ts](../src/backend/mcp/manager.ts) - MCP サーバー管理
 
 **現在の制限**:
 - モデル名はハードコード
@@ -469,10 +475,131 @@ OpenAI の `createOpenAI()` を `baseURL` 付きで使用：
 | **レベル2** | OpenAI 互換 API 対応 | 中 | 中 |
 | **レベル3** | 最新モデルへの自動追随 | 中 | 中 |
 | **レベル4** | 完全な動的管理 | 高 | 高 |
+| **レベル5** | MCP ツール統合 | 中 | 高 |
 
 **初期段階**: レベル1 または レベル2 を推奨
 **プロダクション**: レベル2 + レベル3 の組み合わせが実用的
 **エンタープライズ**: レベル4 で完全な柔軟性を実現
+**外部ツール連携**: レベル5 で MCP サーバーとの統合
+
+---
+
+## レベル5: MCP ツール統合
+
+AI プロバイダーに外部ツール呼び出し機能を追加します。Model Context Protocol (MCP) サーバーを統合することで、AI がファイルシステム、データベース、API などにアクセスできるようになります。
+
+### MCP とは
+
+**Model Context Protocol (MCP)** は、Anthropic が提唱する AI と外部ツールを接続するための標準プロトコルです。
+
+**主な機能**:
+- **Tools**: AI が呼び出せる関数（ファイル読み書き、計算、API 呼び出しなど）
+- **Resources**: AI が参照できるデータソース
+- **Prompts**: AI に渡すテンプレート
+
+### AI SDK v5 の MCP サポート
+
+本プロジェクトで使用している **Vercel AI SDK v5** は、MCP を公式にサポートしています。
+
+```typescript
+import { experimental_createMCPClient } from '@ai-sdk/mcp'
+import { Experimental_StdioMCPTransport } from '@ai-sdk/mcp/mcp-stdio'
+import { streamText, stepCountIs } from 'ai'
+
+// MCP クライアントを作成
+const transport = new Experimental_StdioMCPTransport({
+  command: 'npx',
+  args: ['-y', '@modelcontextprotocol/server-filesystem', '/path/to/allowed']
+})
+
+const mcpClient = await experimental_createMCPClient({ transport })
+
+// ツールを取得（Record<string, Tool> 形式）
+const tools = await mcpClient.tools()
+
+// AI にツールを渡してストリーミング
+const result = streamText({
+  model,
+  messages,
+  tools,  // MCP ツールをそのまま渡せる
+  stopWhen: stepCountIs(10)  // マルチステップツール呼び出し
+})
+```
+
+### 実装済みの MCP 統合
+
+本プロジェクトには既に MCP 統合が実装されており、以下の機能が利用可能です：
+
+**実装場所**:
+- `src/backend/mcp/manager.ts` - MCP サーバーのライフサイクル管理
+- `src/backend/ai/stream.ts` - ツール呼び出しとロギング
+- `src/backend/handler.ts` - MCP ツールの取得と AI への渡し方
+
+**主な機能**:
+- 複数の MCP サーバーの並行管理
+- アプリ起動時の自動接続
+- マルチステップツール呼び出し（最大10ステップ）
+- 詳細なツール実行ログ
+
+**使用例**:
+
+```typescript
+// MCPManager からツールを取得
+const mcpManager = new MCPManager()
+await mcpManager.initialize()  // 設定された全サーバーを起動
+
+const allTools = await mcpManager.getAllTools()
+// → Record<string, Tool> 形式で全ツールを取得
+
+// AI にツールを渡す
+const sessionId = await streamText(
+  config,
+  messages,
+  publishEvent,
+  allTools  // ← MCP ツールを渡す
+)
+```
+
+### MCP サーバーの追加方法
+
+1. **MCP サーバーをインストール**:
+   ```bash
+   npm install -g @modelcontextprotocol/server-filesystem
+   ```
+
+2. **データベースに設定を追加**:
+   アプリの設定画面（MCP Settings）から追加、または直接データベースに書き込み：
+   ```typescript
+   await mcpManager.addServer({
+     name: 'Filesystem',
+     command: 'npx',
+     args: ['-y', '@modelcontextprotocol/server-filesystem', '/path/to/allowed'],
+     enabled: true
+   })
+   ```
+
+3. **アプリを再起動**:
+   自動的に MCP サーバーが起動し、ツールが利用可能になります。
+
+### MCP ツールのロギング
+
+MCP ツールの呼び出しと結果は詳細にログ出力されます：
+
+```
+[MCP] 3 tool(s) available for session xyz789
+[MCP] Tool: read_file - Read contents of a file
+[MCP] Tool: write_file - Write contents to a file
+[MCP] Tool: list_directory - List directory contents
+[MCP] Tool called: read_file { toolCallId: 'abc123', input: { path: '/foo/bar.txt' } }
+[MCP] Tool result received: read_file { toolCallId: 'abc123', output: '...' }
+```
+
+### 参考リンク
+
+- **[MCP Integration Design](./MCP_INTEGRATION_DESIGN.md)** - 本プロジェクトの MCP 統合設計
+- **[Model Context Protocol](https://modelcontextprotocol.io)** - MCP 公式サイト
+- **[Vercel AI SDK - MCP](https://sdk.vercel.ai/docs/ai-sdk-core/mcp)** - AI SDK の MCP サポート
+- **[MCP Servers](https://github.com/modelcontextprotocol/servers)** - 公式 MCP サーバー集
 
 ---
 
