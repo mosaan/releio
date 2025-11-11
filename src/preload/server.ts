@@ -9,7 +9,10 @@ export class Server {
 
   public readonly mainAPI: RendererMainAPI = {
     ping: (...args) => ipcRenderer.invoke('ping', ...args),
-    openFolder: (...args) => ipcRenderer.invoke('openFolder', ...args)
+    openFolder: (...args) => ipcRenderer.invoke('openFolder', ...args),
+    checkForUpdates: (...args) => ipcRenderer.invoke('checkForUpdates', ...args),
+    downloadUpdate: (...args) => ipcRenderer.invoke('downloadUpdate', ...args),
+    quitAndInstall: (...args) => ipcRenderer.invoke('quitAndInstall', ...args)
   }
 
   public readonly backendAPI: RendererBackendAPI & BackendListenerAPI = {

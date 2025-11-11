@@ -68,7 +68,12 @@ export type ConnectionMessage = InvokeMessage | ResultMessage | EventMessage
 export enum EventType {
   Message = 'message',
   Status = 'status',
-  Error = 'error'
+  Error = 'error',
+  UpdateAvailable = 'update-available',
+  UpdateNotAvailable = 'update-not-available',
+  UpdateDownloadProgress = 'update-download-progress',
+  UpdateDownloaded = 'update-downloaded',
+  UpdateError = 'update-error'
 }
 
 export interface AppEvent {
@@ -128,6 +133,10 @@ export interface RendererBackendAPI {
 export interface RendererMainAPI {
   ping: () => Promise<Result<string>>
   openFolder: (folderPath: string) => Promise<Result<void>>
+  // Update operations
+  checkForUpdates: () => Promise<Result<UpdateCheckResult, string>>
+  downloadUpdate: () => Promise<Result<void, string>>
+  quitAndInstall: () => Promise<Result<void, string>>
 }
 
 // MCP Server Configuration
@@ -210,4 +219,37 @@ export interface ConnectionTestResult {
     error?: string
     errorType?: 'proxy' | 'certificate' | 'network' | 'timeout' | 'unknown'
   }
+}
+
+// Auto-Update Types
+
+export interface UpdaterConfig {
+  enabled: boolean
+  updateServerUrl?: string
+  channel?: string
+}
+
+export interface UpdateInfo {
+  version: string
+  releaseDate?: string
+  releaseName?: string
+  releaseNotes?: string
+}
+
+export type UpdateCheckResult =
+  | { available: false }
+  | { available: true; updateInfo: UpdateInfo }
+
+export interface UpdateProgressInfo {
+  bytesPerSecond: number
+  percent: number
+  transferred: number
+  total: number
+}
+
+export type UpdateDownloadProgress = UpdateProgressInfo
+
+export interface UpdateError {
+  message: string
+  code?: string
 }

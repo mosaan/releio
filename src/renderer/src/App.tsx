@@ -3,6 +3,7 @@ import { Settings as SettingsIcon, MessageCircle } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
 import { Settings } from '@renderer/components/Settings'
 import { ChatPage } from '@renderer/components/ChatPage'
+import { UpdateNotification } from '@renderer/components/UpdateNotification'
 import { logger } from '@renderer/lib/logger'
 import { isOk } from '@common/result'
 
@@ -123,6 +124,9 @@ function App() {
           </div>
         </div>
       </div>
+
+      {/* Update notification component */}
+      <UpdateNotification disabled={!backendConnected} />
     </div>
   )
 }

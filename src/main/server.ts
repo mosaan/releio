@@ -3,22 +3,33 @@ import { join } from 'path'
 import icon from '@resources/icon.png?asset'
 import { Handler } from './handler'
 import { Backend } from './backend'
+import { Updater } from './updater'
+import { loadUpdaterConfig } from './updater-config'
 import logger from './logger'
 
 export class Server {
   private _backend: Backend
   private _mainWindow: BrowserWindow | null = null
   private _handler: Handler
+  private _updater: Updater
 
   constructor() {
     this._handler = new Handler()
     this._backend = new Backend()
+    this._updater = new Updater()
+
+    // Set updater instance in handler for IPC calls
+    this._handler.setUpdater(this._updater)
 
     ipcMain.on('connectBackend', async (e) => {
       return this._backend.connectRenderer(e.sender)
     })
 
-    this._handle(['ping', 'openFolder'])
+    this._handle(['ping', 'openFolder', 'checkForUpdates', 'downloadUpdate', 'quitAndInstall'])
+  }
+
+  getUpdater(): Updater {
+    return this._updater
   }
 
   async createMainWindow(): Promise<void> {
@@ -58,6 +69,10 @@ export class Server {
     }
 
     logger.info('Main window created')
+
+    // Initialize auto-updater
+    const updaterConfig = loadUpdaterConfig()
+    this._updater.initialize(updaterConfig, this._mainWindow)
   }
 
   async shutdown(): Promise<void> {

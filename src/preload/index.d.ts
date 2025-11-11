@@ -1,7 +1,14 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
-import { BackendListenerAPI, RendererBackendAPI } from '../common/types'
+import { BackendListenerAPI, RendererBackendAPI, RendererMainAPI } from '../common/types'
 
-export type { AIProvider, AIMessage, AISettings, AIConfig } from '../common/types'
+export type {
+  AIProvider,
+  AIMessage,
+  AISettings,
+  AIConfig,
+  UpdateCheckResult,
+  UpdateInfo
+} from '../common/types'
 
 declare global {
   // Global electron-log object
@@ -17,9 +24,7 @@ declare global {
   interface Window {
     electron: ElectronAPI
     connectBackend(): Promise<void>
-    main: {
-      // Only keep essential main process operations
-      openFolder(folderPath: string): Promise<void>
+    main: RendererMainAPI & {
       // Raw IPC event methods for renderer to handle streaming events
       on(channel: string, listener: (...args: unknown[]) => void): void
       off(channel: string, listener: (...args: unknown[]) => void): void

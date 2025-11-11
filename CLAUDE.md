@@ -177,6 +177,26 @@ For technical design details, see `docs/PROXY_AND_CERTIFICATE_DESIGN.md`.
   - Easy to trace cross-process flows (e.g., user action → IPC → backend → AI → response)
   - Filter by process: `grep '[backend]' ./tmp/logs/app.log`
 
+### Auto-Update Configuration
+
+The application includes automatic update functionality using `electron-updater` with static server support (Windows only):
+
+- **Architecture**: Main process updater with renderer UI notifications
+- **Update check**: Automatic on app startup (3-second delay, non-blocking)
+- **User flow**: Dialog-based interaction (download, install, dismiss)
+- **Configuration modes**:
+  - Development: `ELECTRON_UPDATER_CONFIG` environment variable (JSON string)
+  - Production: `updater.json` file next to executable
+- **Update server**: Static web server with HTTPS (GitHub Pages, S3+CloudFront, Nginx, etc.)
+- **Security**: Automatic SHA-512 signature verification by electron-updater
+- **Components**:
+  - `src/main/updater.ts` - Core updater logic
+  - `src/main/updater-config.ts` - Configuration loader
+  - `src/renderer/src/components/UpdateNotification.tsx` - Update UI
+- **NSIS installer**: Per-user installation for easy updater.json placement
+
+For detailed usage and testing instructions, see `docs/AUTO_UPDATE.md`.
+
 ### UI & Styling Architecture
 
 - **Tailwind CSS 4** with CSS variables for theming support
@@ -229,6 +249,7 @@ For technical design details, see `docs/PROXY_AND_CERTIFICATE_DESIGN.md`.
 - `eslint` - Code linting
 - `prettier` - Code formatting
 - `electron-builder` - Application packaging
+- `electron-updater` - Auto-update functionality
 
 ## Documentation Guidelines
 
