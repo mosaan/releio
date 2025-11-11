@@ -105,6 +105,17 @@ pnpm run shadcn add [component-name]
 
 The configuration uses New York style with Lucide icons and neutral base color.
 
+**Important: Network Error Handling**
+
+If `pnpm run shadcn add` or any package installation command fails due to network errors (403, 404, timeout, etc.):
+
+- **DO NOT** implement custom alternatives or workarounds independently
+- **DO** immediately report the error to the user
+- **DO** ask the user how they would like to proceed
+- **NEVER** add dependencies or create custom implementations without explicit user approval
+
+This ensures architectural consistency and prevents unauthorized deviations from the project's design patterns.
+
 ### Database Configuration
 
 - **SQLite database** with environment-based path configuration
