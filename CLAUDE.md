@@ -297,6 +297,28 @@ sqlite3 ./tmp/db/app.db ".schema settings"
 
 See `docs/FOR_DEVELOPERS.md` for more detailed examples and usage patterns.
 
+## GitHub CLI (gh) Usage
+
+This repository is forked from `rarexlabs/electron-ai-starter`. When using `gh` commands to manage Issues, PRs, or other GitHub resources:
+
+- **Always specify the repository explicitly**: `--repo mosaan/electron-ai-starter`
+- This ensures commands target your forked repository, not the upstream repository
+
+**Examples**:
+```bash
+# List issues from your fork
+gh issue list --repo mosaan/electron-ai-starter
+
+# View specific issue
+gh issue view 10 --repo mosaan/electron-ai-starter
+
+# Create new issue
+gh issue create --repo mosaan/electron-ai-starter --title "Title" --body "Description"
+
+# Edit issue
+gh issue edit 10 --repo mosaan/electron-ai-starter --title "New title"
+```
+
 ## Commit Guidelines
 
 - Keep commit messages concise and descriptive
