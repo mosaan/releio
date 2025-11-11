@@ -90,7 +90,8 @@ export class MCPManager {
       // Try to get tools immediately to verify connection
       try {
         const tools = await client.tools()
-        mcpLogger.info(`[START] Successfully connected to ${config.name}: ${tools.length} tool(s) available`)
+        const toolCount = Object.keys(tools).length
+        mcpLogger.info(`[START] Successfully connected to ${config.name}: ${toolCount} tool(s) available`)
       } catch (err) {
         mcpLogger.warn(`[START] Server ${config.name} started but failed to get tools:`, err)
       }
