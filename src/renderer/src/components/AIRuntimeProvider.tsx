@@ -21,24 +21,26 @@ const AIModelAdapter: ChatModelAdapter = {
     const textChunks: string[] = []
     const contentParts: any[] = []
 
+    // Helper function to build current content array
+    const buildContent = () => {
+      const parts: any[] = []
+
+      // Add all tool-call parts
+      parts.push(...contentParts)
+
+      // Add accumulated text (always include text part, even if empty)
+      const textContent = textChunks.join('')
+      parts.push({ type: 'text', text: textContent })
+
+      return parts
+    }
+
     for await (const chunk of stream) {
       if (abortSignal?.aborted) return
 
       if (chunk.type === 'text') {
         textChunks.push(chunk.text)
-        // Update content parts with accumulated text
-        const textContent = textChunks.join('')
-        const parts = [...contentParts]
-
-        // Update or add text part
-        const textPartIndex = parts.findIndex((p) => p.type === 'text')
-        if (textPartIndex >= 0) {
-          parts[textPartIndex] = { type: 'text', text: textContent }
-        } else {
-          parts.push({ type: 'text', text: textContent })
-        }
-
-        yield { content: parts }
+        yield { content: buildContent() }
       } else if (chunk.type === 'tool-call') {
         logger.info('[MCP] Yielding tool-call:', chunk.toolName)
         // Add tool-call part
@@ -49,7 +51,7 @@ const AIModelAdapter: ChatModelAdapter = {
           args: chunk.input,
           argsText: JSON.stringify(chunk.input, null, 2)
         })
-        yield { content: [...contentParts, { type: 'text', text: textChunks.join('') }] }
+        yield { content: buildContent() }
       } else if (chunk.type === 'tool-result') {
         logger.info('[MCP] Yielding tool-result:', chunk.toolName)
         // Find and update corresponding tool-call with result
@@ -64,7 +66,7 @@ const AIModelAdapter: ChatModelAdapter = {
           }
         }
 
-        yield { content: [...contentParts, { type: 'text', text: textChunks.join('') }] }
+        yield { content: buildContent() }
       }
     }
 
