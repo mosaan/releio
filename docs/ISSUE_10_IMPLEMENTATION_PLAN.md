@@ -302,11 +302,33 @@ This document will be updated after each phase to track:
 ### Current Status
 
 - ✅ Phase 0: Analysis and planning complete
-- ⏳ Phase 1: Backend - Database Schema v2
-- ⏳ Phase 2: Backend - Preset-based API
-- ⏳ Phase 3: Settings UI
+- ✅ Phase 1: Backend - Database Schema v2 (Commits 082be4b, 0dd8851)
+- ✅ Phase 2: Backend - Preset-based API (Commit 2b6bd44)
+- 🚧 Phase 3: Settings UI (In Progress)
 - ⏳ Phase 4: Chat UI
 - ⏳ Phase 5: Testing
+
+### Completed Work
+
+#### Phase 1: Backend - Database Schema v2
+**Commit 082be4b**: Added Azure OpenAI provider support
+- Added 'azure' to AIProvider type
+- Installed @ai-sdk/azure package
+- Added Azure factory configuration
+- Updated UI to include Azure option
+
+**Commit 0dd8851**: Implemented AI settings v2 schema and migration
+- Created AISettingsV2, AIProviderConfig, AzureProviderConfig, AIModelPreset interfaces
+- Implemented migration function from v1 to v2
+- Created ai-settings.ts with preset management functions
+- Auto-generated preset names (Provider - Model format)
+
+#### Phase 2: Backend - Preset-based API
+**Commit 2b6bd44**: Implemented preset-based AI streaming API
+- Added StreamAIOptions interface
+- Extended streamAIText with resolution logic (preset → override → default → fallback)
+- Added v2 settings management APIs
+- Updated Handler and preload bridge with new methods
 
 ## Technical Decisions
 
