@@ -17,7 +17,6 @@ export class Server {
     getSetting: (...args) => this._invoke('getSetting', ...args),
     setSetting: (...args) => this._invoke('setSetting', ...args),
     clearSetting: (...args) => this._invoke('clearSetting', ...args),
-    clearDatabase: (...args) => this._invoke('clearDatabase', ...args),
     getDatabasePath: (...args) => this._invoke('getDatabasePath', ...args),
     getLogPath: (...args) => this._invoke('getLogPath', ...args),
     streamAIText: (...args) => this._invoke('streamAIText', ...args),

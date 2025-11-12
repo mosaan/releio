@@ -28,7 +28,7 @@ import { getDatabasePath, getLogPath } from './paths'
 import logger from './logger'
 import { streamText, abortStream, listAvailableModel, testConnection } from './ai'
 import { FACTORY } from './ai/factory'
-import { close, db, destroy } from './db'
+import { db } from './db'
 import { mcpManager } from './mcp'
 import { getProxySettings as loadProxySettings, setProxySettings as saveProxySettings, getSystemProxySettings as loadSystemProxySettings } from './settings/proxy'
 import { getCertificateSettings as loadCertificateSettings, setCertificateSettings as saveCertificateSettings, getSystemCertificateSettings as loadSystemCertificateSettings } from './settings/certificate'
@@ -76,12 +76,6 @@ export class Handler {
 
   async clearSetting(key: string): Promise<Result<void>> {
     await clearSetting(key)
-    return ok(undefined)
-  }
-
-  async clearDatabase(): Promise<Result<void, string>> {
-    close(db)
-    destroy()
     return ok(undefined)
   }
 

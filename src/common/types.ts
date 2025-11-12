@@ -195,7 +195,6 @@ export interface RendererBackendAPI {
   getSetting: (key: string) => Promise<Result<unknown>>
   setSetting: (key: string, value: unknown) => Promise<Result<void>>
   clearSetting: (key: string) => Promise<Result<void>>
-  clearDatabase: () => Promise<Result<void>>
   getDatabasePath: () => Promise<Result<string>>
   getLogPath: () => Promise<Result<string>>
   streamAIText: (messages: AIMessage[], options?: StreamAIOptions) => Promise<Result<string>>
