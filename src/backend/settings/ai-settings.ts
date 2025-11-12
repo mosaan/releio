@@ -2,10 +2,13 @@ import { randomUUID } from 'crypto'
 import type {
   AISettings,
   AISettingsV2,
+  AISettingsV3,
   AIProvider,
   AIProviderConfig,
   AzureProviderConfig,
-  AIModelPreset
+  AIModelPreset,
+  AIProviderConfiguration,
+  AIModelDefinition
 } from '@common/types'
 import { getSetting, setSetting } from './index'
 import logger from '../logger'
@@ -255,4 +258,159 @@ export async function getProviderConfig(
 ): Promise<AIProviderConfig | AzureProviderConfig | undefined> {
   const settings = await getAISettingsV2()
   return settings.providers[provider]
+}
+
+// ============================================================================
+// V3 Settings Functions
+// ============================================================================
+
+/**
+ * Get default provider name for migration
+ */
+function getDefaultProviderName(type: AIProvider): string {
+  const names: Record<AIProvider, string> = {
+    openai: 'OpenAI',
+    anthropic: 'Anthropic',
+    google: 'Google',
+    azure: 'Azure OpenAI'
+  }
+  return names[type]
+}
+
+/**
+ * Get default models for a provider type (for migration from V2)
+ */
+function getDefaultModelsForType(type: AIProvider): AIModelDefinition[] {
+  const hardcodedModels = FACTORY[type]?.available || []
+  return hardcodedModels.map((modelId) => ({
+    id: modelId,
+    source: 'api' as const, // Treat as API-sourced for migration purposes
+    addedAt: new Date().toISOString()
+  }))
+}
+
+/**
+ * Migrate v2 settings to v3 format
+ */
+export function migrateAISettingsV2ToV3(v2: AISettingsV2): AISettingsV3 {
+  aiLogger.info('Migrating AI settings from v2 to v3')
+
+  const v3: AISettingsV3 = {
+    version: 3,
+    providerConfigs: []
+  }
+
+  // Step 1: Convert provider configurations to provider configs
+  const providers: AIProvider[] = ['openai', 'anthropic', 'google', 'azure']
+
+  for (const type of providers) {
+    const config = v2.providers[type]
+    if (!config) continue
+
+    const providerConfigId = randomUUID()
+    const now = new Date().toISOString()
+
+    const providerConfig: AIProviderConfiguration = {
+      id: providerConfigId,
+      name: getDefaultProviderName(type),
+      type: type,
+      config: config,
+      models: getDefaultModelsForType(type), // Migrate from hardcoded list
+      modelRefreshEnabled: true,
+      enabled: true,
+      createdAt: now,
+      updatedAt: now
+    }
+
+    v3.providerConfigs.push(providerConfig)
+    aiLogger.debug(`Migrated ${type} provider configuration to v3`)
+  }
+
+  // Step 2: Set default selection from v2.defaultPresetId
+  if (v2.defaultPresetId) {
+    const defaultPreset = v2.presets.find((p) => p.id === v2.defaultPresetId)
+    if (defaultPreset) {
+      const matchingConfig = v3.providerConfigs.find((c) => c.type === defaultPreset.provider)
+      if (matchingConfig) {
+        v3.defaultSelection = {
+          providerConfigId: matchingConfig.id,
+          modelId: defaultPreset.model
+        }
+        aiLogger.debug(`Set default selection from v2 preset: ${defaultPreset.name}`)
+      }
+    }
+  }
+
+  aiLogger.info(`Migration complete: ${v3.providerConfigs.length} provider config(s) created`)
+  return v3
+}
+
+/**
+ * Get AI settings v3, performing migration if necessary
+ */
+export async function getAISettingsV3(): Promise<AISettingsV3> {
+  try {
+    // Try to get v3 settings first
+    const v3Settings = await getSetting<AISettingsV3>('ai_v3')
+    if (v3Settings && v3Settings.version === 3) {
+      aiLogger.debug('Loaded AI settings v3')
+      return v3Settings
+    }
+  } catch (error) {
+    aiLogger.debug('No v3 settings found, checking for v2')
+  }
+
+  // Try to get v2 settings and migrate
+  try {
+    const v2Settings = await getSetting<AISettingsV2>('ai_v2')
+    if (v2Settings && v2Settings.version === 2) {
+      aiLogger.info('Found v2 settings, performing migration to v3')
+      const v3Settings = migrateAISettingsV2ToV3(v2Settings)
+
+      // Save migrated settings
+      await setSetting('ai_v3', v3Settings)
+      aiLogger.info('Saved migrated v3 settings')
+
+      return v3Settings
+    }
+  } catch (error) {
+    aiLogger.debug('No v2 settings found, checking for v1')
+  }
+
+  // Try v1 settings and migrate through v2 first
+  try {
+    const v1Settings = await getSetting<AISettings>('ai')
+    if (v1Settings) {
+      aiLogger.info('Found v1 settings, migrating through v2 to v3')
+      const v2Settings = migrateAISettingsV1ToV2(v1Settings)
+      const v3Settings = migrateAISettingsV2ToV3(v2Settings)
+
+      // Save both v2 and v3 for compatibility
+      await setSetting('ai_v2', v2Settings)
+      await setSetting('ai_v3', v3Settings)
+      aiLogger.info('Saved migrated v2 and v3 settings')
+
+      return v3Settings
+    }
+  } catch (error) {
+    aiLogger.debug('No v1 settings found')
+  }
+
+  // Return empty v3 settings if nothing exists
+  aiLogger.info('Initializing empty AI settings v3')
+  const emptySettings: AISettingsV3 = {
+    version: 3,
+    providerConfigs: []
+  }
+
+  await setSetting('ai_v3', emptySettings)
+  return emptySettings
+}
+
+/**
+ * Save AI settings v3
+ */
+export async function saveAISettingsV3(settings: AISettingsV3): Promise<void> {
+  aiLogger.info('Saving AI settings v3')
+  await setSetting('ai_v3', settings)
 }
