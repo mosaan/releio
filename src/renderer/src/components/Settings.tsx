@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { ArrowLeft, FolderOpen, Wifi, Loader2, CheckCircle, XCircle } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
-import { isOk, isError } from '@common/result'
+import { isOk } from '@common/result'
 import { logger } from '@renderer/lib/logger'
 import type { ConnectionTestResult } from '@common/types'
 import {

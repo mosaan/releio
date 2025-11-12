@@ -60,7 +60,18 @@ function main() {
   app.on('before-quit', async (event) => {
     console.log('before-quit')
     event.preventDefault()
-    await server!.shutdown()
+
+    // Add timeout to prevent hanging forever
+    const shutdownPromise = server!.shutdown()
+    const timeoutPromise = new Promise<void>((resolve) => {
+      setTimeout(() => {
+        logger.warn('Shutdown timeout - forcing exit')
+        resolve()
+      }, 6000) // 6 second timeout (slightly longer than backend stop timeout)
+    })
+
+    // Wait for either shutdown to complete or timeout
+    await Promise.race([shutdownPromise, timeoutPromise])
     app.exit(0)
   })
 }

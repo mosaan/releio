@@ -1,4 +1,4 @@
-import { utilityProcess, MessageChannelMain, UtilityProcess, WebContents, app } from 'electron'
+import { utilityProcess, MessageChannelMain, UtilityProcess, WebContents, app, BrowserWindow } from 'electron'
 import logger from './logger'
 import { getBasePath } from './paths'
 import backendPath from '../backend/index?modulePath'
@@ -7,6 +7,8 @@ import log from 'electron-log/main'
 export class Backend {
   private _process: UtilityProcess
   private _messageChannels: Map<number, MessageChannelMain> = new Map()
+  private _isRunning: boolean = false
+  private _hasStopped: boolean = false
 
   constructor() {
     const userDataPath = getBasePath()
@@ -53,12 +55,18 @@ export class Backend {
   private _setupProcessMonitoring(): void {
     // Log when process spawns
     this._process.on('spawn', () => {
+      this._isRunning = true
       logger.info('Backend process spawned successfully')
     })
 
     // Log when process exits
     this._process.on('exit', (code) => {
+      this._isRunning = false
+      this._hasStopped = true
       logger.error('Backend process exited unexpectedly', { exitCode: code })
+
+      // Notify all renderer windows that backend has exited
+      this._notifyBackendExited()
     })
 
     // Capture stdout
@@ -80,6 +88,19 @@ export class Backend {
         }
       })
     }
+  }
+
+  /**
+   * Notify all renderer windows that backend has exited
+   */
+  private _notifyBackendExited(): void {
+    const windows = BrowserWindow.getAllWindows()
+    windows.forEach((window) => {
+      if (!window.isDestroyed()) {
+        window.webContents.send('backendExited')
+        logger.info('Sent backendExited notification to renderer', { windowId: window.id })
+      }
+    })
   }
 
   connectRenderer(renderer: WebContents): void {
@@ -115,15 +136,39 @@ export class Backend {
 
   async stop(): Promise<void> {
     if (!this._process) return
+
+    // If backend already stopped (crashed), no need to wait
+    if (this._hasStopped) {
+      logger.info('Backend process already stopped (likely crashed)')
+      return
+    }
+
     logger.info('Stopping backend process...')
 
     return new Promise<void>((resolve) => {
+      // Set a timeout to prevent infinite waiting
+      const timeout = setTimeout(() => {
+        logger.warn('Backend process stop timeout - forcing resolution')
+        this._hasStopped = true
+        resolve()
+      }, 5000) // 5 second timeout
+
       this._process.once('exit', () => {
+        clearTimeout(timeout)
+        this._hasStopped = true
         logger.info('Backend process stopped')
         resolve()
       })
 
-      this._process.kill()
+      // Only kill if the process is still running
+      if (this._isRunning) {
+        this._process.kill()
+      } else {
+        // Process not running, resolve immediately
+        clearTimeout(timeout)
+        logger.info('Backend process not running, skipping kill')
+        resolve()
+      }
     })
   }
 }
