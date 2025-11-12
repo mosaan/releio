@@ -105,6 +105,17 @@ pnpm run shadcn add [component-name]
 
 The configuration uses New York style with Lucide icons and neutral base color.
 
+**Important: Network Error Handling**
+
+If `pnpm run shadcn add` or any package installation command fails due to network errors (403, 404, timeout, etc.):
+
+- **DO NOT** implement custom alternatives or workarounds independently
+- **DO** immediately report the error to the user
+- **DO** ask the user how they would like to proceed
+- **NEVER** add dependencies or create custom implementations without explicit user approval
+
+This ensures architectural consistency and prevents unauthorized deviations from the project's design patterns.
+
 ### Database Configuration
 
 - **SQLite database** with environment-based path configuration
@@ -198,6 +209,26 @@ For technical design details, see `docs/PROXY_AND_CERTIFICATE_DESIGN.md`.
 - Testing is set up for the backend process using Vitest with Electron runtime
 - The backend process is separated from main for better organization and testing
 - Assistant UI provides pre-built components for chat interfaces with streaming support
+
+### Packaging and Environment Detection
+
+**Important**: The application uses reliable Electron APIs for environment detection:
+
+- **Main process** uses `app.isPackaged` to detect production builds (not `NODE_ENV`)
+- **Backend process** uses `process.resourcesPath !== undefined` to detect packaged state
+- **Logging** uses `app.isPackaged` for production detection (combined with `import.meta.env.DEV` fallback)
+
+**Resource files** (migrations, icons, etc.) are packaged via `electron-builder.yml`:
+- `extraResources` copies `resources/` folder to `process.resourcesPath` in production
+- Migrations accessed via `process.resourcesPath + '/db/migrations'` when packaged
+- Development uses `./resources/` from project root
+
+**User data paths** in production:
+- Windows: `C:\Users\<username>\AppData\Roaming\electron-ai-starter\`
+- macOS: `~/Library/Application Support/electron-ai-starter/`
+- Linux: `~/.config/electron-ai-starter/`
+
+See `src/main/paths.ts` and `src/backend/db/index.ts` for implementation details.
 
 ## Key Dependencies
 

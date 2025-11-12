@@ -66,13 +66,24 @@ export function destroy(): void {
 }
 
 function _getMigrationsFolder(): string | null {
-  // In development and test environments, use the resources folder directly
-  // In production, use the app.asar.unpacked path
-  const isProduction = process.env.NODE_ENV === 'production'
+  // Get packaging status from command line argument passed by main process
+  // This is more reliable than checking process.resourcesPath which is defined
+  // even in development mode (pointing to Electron's internal resources)
+  const args = process.argv
+  const isPackagedIndex = args.indexOf('--is-packaged')
+  const isPackaged = isPackagedIndex !== -1 && isPackagedIndex + 1 < args.length
+    ? args[isPackagedIndex + 1] === 'true'
+    : false
 
-  const migrationsPath = isProduction
-    ? path.join(process.resourcesPath, 'db', 'migrations')
+  const migrationsPath = isPackaged
+    ? path.join(process.resourcesPath!, 'db', 'migrations')
     : path.join(process.cwd(), 'resources', 'db', 'migrations')
+
+  logger.debug('Checking migrations folder', {
+    isPackaged,
+    migrationsPath,
+    exists: fs.existsSync(migrationsPath)
+  })
 
   return fs.existsSync(migrationsPath) ? migrationsPath : null
 }

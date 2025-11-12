@@ -1,14 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Button } from '@renderer/components/ui/button'
-import { Input } from '@renderer/components/ui/input'
-import { Label } from '@renderer/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue
-} from '@renderer/components/ui/select'
 import {
   Card,
   CardContent,
@@ -16,327 +7,226 @@ import {
   CardHeader,
   CardTitle
 } from '@renderer/components/ui/card'
-import { CheckCircle, Loader2, Trash2, XCircle } from 'lucide-react'
-import type { AIProvider, AISettings, AIConfig } from '@common/types'
+import { Plus, Edit, Trash2 } from 'lucide-react'
+import type { AISettingsV2, AIProviderConfiguration } from '@common/types'
 import { isOk } from '@common/result'
 import { logger } from '@renderer/lib/logger'
+import { Switch } from '@renderer/components/ui/switch'
+import { Badge } from '@renderer/components/ui/badge'
+import { ProviderConfigDialog } from './ProviderConfigDialog'
 
-interface AISettingsProps {
-  onProviderChange?: (provider: AIProvider) => void
+interface AISettingsV2Props {
   className?: string
 }
 
-export function AISettings({
-  onProviderChange,
-  className = ''
-}: AISettingsProps): React.JSX.Element {
-  const [selectedProvider, setSelectedProvider] = useState<AIProvider>('openai')
-  const [apiKey, setApiKey] = useState('')
-  const [model, setModel] = useState('')
-  const [models, setModels] = useState<string[]>([])
-  const [isTesting, setIsTesting] = useState(false)
-  const [isSaving, setIsSaving] = useState(false)
-  const [connectionTestSuccess, setConnectionTestSuccess] = useState(false)
-  const [connectionTestError, setConnectionTestError] = useState(false)
-  const [isClearing, setIsClearing] = useState(false)
-  const [saveSuccess, setSaveSuccess] = useState(false)
+export function AISettingsV2Component({ className = '' }: AISettingsV2Props): React.JSX.Element {
+  const [settings, setSettings] = useState<AISettingsV2 | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [editingConfig, setEditingConfig] = useState<AIProviderConfiguration | null>(null)
+
+  // Load settings on mount
+  useEffect(() => {
+    loadSettings()
+  }, [])
 
   const loadSettings = useCallback(async (): Promise<void> => {
     try {
       await window.connectBackend()
-      const result = await window.backend.getSetting('ai')
+      const result = await window.backend.getAISettingsV2()
+
+      // Debug: Log the entire result
+      console.log('getAISettingsV2 result:', JSON.stringify(result, null, 2))
+
       if (isOk(result)) {
-        const aiSettings = (result.value as AISettings) || {}
-        const currentProvider = aiSettings.default_provider || 'openai'
-        setSelectedProvider(currentProvider)
-        await loadProviderSettings(currentProvider, aiSettings)
+        // Debug: Check if providerConfigs exists
+        console.log('result.value:', result.value)
+        console.log('providerConfigs:', result.value?.providerConfigs)
+
+        // Defensive: Ensure providerConfigs array exists
+        const sanitizedSettings: AISettingsV2 = {
+          version: 2,
+          providerConfigs: result.value?.providerConfigs || [],
+          defaultSelection: result.value?.defaultSelection
+        }
+
+        setSettings(sanitizedSettings)
+        logger.info('Loaded AI settings v2', {
+          providerCount: sanitizedSettings.providerConfigs.length
+        })
       } else {
-        logger.error('Failed to get AI settings:', result.error)
+        logger.error('Failed to load AI settings v2:', result.error)
       }
     } catch (error) {
       logger.error('Failed to load AI settings:', error)
+      console.error('Full error details:', error)
+    } finally {
+      setIsLoading(false)
     }
   }, [])
 
-  const loadModels = useCallback(async (): Promise<void> => {
-    try {
-      const result = await window.backend.getAIModels(selectedProvider)
-      if (isOk(result)) {
-        setModels(result.value)
-        if (!model && result.value.length > 0) {
-          setModel(result.value[0])
-        }
-      } else {
-        logger.error('Failed to get AI models:', result.error)
-        setModels([])
-      }
-    } catch (error) {
-      logger.error('Failed to load models:', error)
-    }
-  }, [selectedProvider, model])
-
-  const loadProviderSettings = async (
-    provider: AIProvider,
-    aiSettings?: AISettings
+  const handleToggleEnabled = async (
+    config: AIProviderConfiguration,
+    enabled: boolean
   ): Promise<void> => {
-    let settings = aiSettings
-    if (!settings) {
-      const result = await window.backend.getSetting('ai')
+    try {
+      const result = await window.backend.updateProviderConfiguration(config.id, { enabled })
       if (isOk(result)) {
-        settings = (result.value as AISettings) || {}
+        await loadSettings()
+        logger.info(`${enabled ? 'Enabled' : 'Disabled'} provider configuration: ${config.name}`)
       } else {
-        logger.error('Failed to get AI settings:', result.error)
-        settings = {}
-      }
-    }
-
-    const modelsResult = await window.backend.getAIModels(provider)
-    let availableModels: string[] = []
-    if (isOk(modelsResult)) {
-      availableModels = modelsResult.value
-    } else {
-      logger.error('Failed to get AI models:', modelsResult.error)
-    }
-
-    setApiKey(settings[`${provider}_api_key`] || '')
-    setModel(settings[`${provider}_model`] || availableModels[0] || 'gpt-4o')
-  }
-
-  const handleProviderChange = async (provider: AIProvider): Promise<void> => {
-    setSelectedProvider(provider)
-    await loadProviderSettings(provider)
-    onProviderChange?.(provider)
-  }
-
-  const testConnection = async (): Promise<void> => {
-    if (!apiKey) return
-
-    setIsTesting(true)
-    setConnectionTestSuccess(false)
-    setConnectionTestError(false)
-    try {
-      const config: AIConfig = {
-        provider: selectedProvider,
-        model: model,
-        apiKey: apiKey
-      }
-
-      const result = await window.backend.testAIProviderConnection(config)
-
-      if (isOk(result) && result.value) {
-        setConnectionTestSuccess(true)
-        setTimeout(() => setConnectionTestSuccess(false), 3000)
-      } else {
-        setConnectionTestError(true)
-        setTimeout(() => setConnectionTestError(false), 3000)
+        logger.error('Failed to update provider configuration:', result.error)
       }
     } catch (error) {
-      logger.error(`Failed to test ${selectedProvider} connection:`, error)
-      setConnectionTestError(true)
-      setTimeout(() => setConnectionTestError(false), 5000)
-    } finally {
-      setIsTesting(false)
+      logger.error('Failed to toggle provider configuration:', error)
     }
   }
 
-  const saveSettings = async (): Promise<void> => {
-    setIsSaving(true)
-    setSaveSuccess(false)
+  const handleDelete = async (config: AIProviderConfiguration): Promise<void> => {
+    if (!confirm(`Are you sure you want to delete "${config.name}"?`)) {
+      return
+    }
+
     try {
-      const settingsResult = await window.backend.getSetting('ai')
-      let currentAiSettings = {}
-      if (isOk(settingsResult)) {
-        currentAiSettings = (settingsResult.value as AISettings) || {}
+      const result = await window.backend.deleteProviderConfiguration(config.id)
+      if (isOk(result)) {
+        await loadSettings()
+        logger.info(`Deleted provider configuration: ${config.name}`)
       } else {
-        logger.error('Failed to get current AI settings:', settingsResult.error)
-      }
-
-      const updatedSettings = {
-        ...currentAiSettings,
-        default_provider: selectedProvider,
-        [`${selectedProvider}_api_key`]: apiKey,
-        [`${selectedProvider}_model`]: model
-      }
-
-      const saveResult = await window.backend.setSetting('ai', updatedSettings)
-      if (isOk(saveResult)) {
-        setSaveSuccess(true)
-        setTimeout(() => setSaveSuccess(false), 3000)
-      } else {
-        logger.error('Failed to save settings:', saveResult.error)
+        logger.error('Failed to delete provider configuration:', result.error)
       }
     } catch (error) {
-      logger.error('Failed to save settings:', error)
-    } finally {
-      setIsSaving(false)
+      logger.error('Failed to delete provider configuration:', error)
     }
   }
 
-  const clearSettings = async (): Promise<void> => {
-    const confirmed = confirm(
-      'Clear all AI settings?\n\nThis will remove all API keys and reset settings to defaults. This action cannot be undone.'
+  const handleEdit = (config: AIProviderConfiguration): void => {
+    setEditingConfig(config)
+    setDialogOpen(true)
+  }
+
+  const handleAddNew = (): void => {
+    setEditingConfig(null)
+    setDialogOpen(true)
+  }
+
+  const handleDialogSave = async (): Promise<void> => {
+    await loadSettings()
+  }
+
+  const getProviderTypeName = (type: string): string => {
+    const typeNames: Record<string, string> = {
+      openai: 'OpenAI',
+      anthropic: 'Anthropic',
+      google: 'Google',
+      azure: 'Azure OpenAI'
+    }
+    return typeNames[type] || type
+  }
+
+  if (isLoading) {
+    return (
+      <Card className={className}>
+        <CardHeader>
+          <CardTitle>AI Provider Configurations</CardTitle>
+          <CardDescription>Loading...</CardDescription>
+        </CardHeader>
+      </Card>
     )
-
-    if (!confirmed) return
-
-    setIsClearing(true)
-    try {
-      const result = await window.backend.clearSetting('ai')
-      if (isOk(result)) {
-        setSelectedProvider('openai')
-        setApiKey('')
-        setModel('')
-        setModels([])
-        setConnectionTestSuccess(false)
-        setConnectionTestError(false)
-        setSaveSuccess(false)
-        onProviderChange?.('openai')
-        logger.info('AI settings cleared successfully')
-      } else {
-        logger.error('Failed to clear AI settings:', result.error)
-      }
-    } catch (error) {
-      logger.error('Failed to clear AI settings:', error)
-    } finally {
-      setIsClearing(false)
-    }
   }
-
-  // Load settings on component mount
-  useEffect(() => {
-    loadSettings()
-  }, [loadSettings])
-
-  // Load models when provider changes
-  useEffect(() => {
-    loadModels()
-  }, [selectedProvider, loadModels])
 
   return (
     <Card className={className}>
-      <CardHeader className="pb-3">
-        <CardTitle className="text-lg">AI Assistant</CardTitle>
-        <CardDescription>Configure your AI provider and model settings</CardDescription>
+      <CardHeader>
+        <CardTitle>AI Provider Configurations</CardTitle>
+        <CardDescription>
+          Manage your AI provider configurations. You can add multiple instances of the same
+          provider type.
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label htmlFor="provider">Provider</Label>
-            <Select value={selectedProvider} onValueChange={handleProviderChange}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select provider" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="openai">OpenAI</SelectItem>
-                <SelectItem value="anthropic">Anthropic</SelectItem>
-                <SelectItem value="google">Google</SelectItem>
-              </SelectContent>
-            </Select>
+        <Button className="w-full" variant="outline" onClick={handleAddNew}>
+          <Plus className="mr-2 h-4 w-4" />
+          Add New Configuration
+        </Button>
+
+        {!settings || settings.providerConfigs.length === 0 ? (
+          <div className="text-center py-8 text-gray-500">
+            No provider configurations found. Click "Add New Configuration" to get started.
           </div>
+        ) : (
+          <div className="space-y-3">
+            {settings.providerConfigs.map((config) => (
+              <Card key={config.id} className="border-2">
+                <CardContent className="pt-6">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1 space-y-2">
+                      <div className="flex items-center gap-3">
+                        <Switch
+                          checked={config.enabled}
+                          onCheckedChange={(checked) => handleToggleEnabled(config, checked)}
+                        />
+                        <h3 className="font-semibold text-lg">{config.name}</h3>
+                        {config.id === settings.defaultSelection?.providerConfigId && (
+                          <Badge variant="secondary">Default</Badge>
+                        )}
+                      </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="model">Model</Label>
-            <Select value={model} onValueChange={setModel}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select model" />
-              </SelectTrigger>
-              <SelectContent>
-                {models.map((modelId) => (
-                  <SelectItem key={modelId} value={modelId}>
-                    {modelId}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+                      <div className="text-sm text-gray-600 space-y-1">
+                        <div>
+                          <span className="font-medium">Type:</span>{' '}
+                          {getProviderTypeName(config.type)}
+                        </div>
+                        {config.config.baseURL && (
+                          <div>
+                            <span className="font-medium">Base URL:</span> {config.config.baseURL}
+                          </div>
+                        )}
+                        <div>
+                          <span className="font-medium">Models:</span> {config.models.length}{' '}
+                          available
+                          {config.models.filter((m) => m.source === 'custom').length > 0 && (
+                            <span className="text-gray-500">
+                              {' '}
+                              ({config.models.filter((m) => m.source === 'custom').length} custom)
+                            </span>
+                          )}
+                        </div>
+                        {config.modelLastRefreshed && (
+                          <div className="text-xs text-gray-500">
+                            Last refreshed: {new Date(config.modelLastRefreshed).toLocaleString()}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 ml-4">
+                      <Button variant="outline" size="sm" onClick={() => handleEdit(config)}>
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleDelete(config)}
+                        disabled={config.enabled}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
           </div>
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="api-key">API Key</Label>
-          <Input
-            id="api-key"
-            type="password"
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            placeholder="Enter your API key"
-          />
-        </div>
-
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Button
-              onClick={() => testConnection()}
-              disabled={!apiKey || isTesting}
-              variant={
-                connectionTestSuccess ? 'default' : connectionTestError ? 'destructive' : 'outline'
-              }
-              size="sm"
-              className={
-                connectionTestSuccess
-                  ? 'bg-green-600 hover:bg-green-700 text-white'
-                  : connectionTestError
-                    ? 'bg-orange-500 hover:bg-orange-600 text-white'
-                    : ''
-              }
-            >
-              {isTesting ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Testing...
-                </>
-              ) : connectionTestSuccess ? (
-                <>
-                  <CheckCircle className="h-4 w-4" />
-                  Connection Successful!
-                </>
-              ) : connectionTestError ? (
-                <>
-                  <XCircle className="h-4 w-4" />
-                  Connection Failed
-                </>
-              ) : (
-                'Test Connection'
-              )}
-            </Button>
-
-            <Button
-              onClick={clearSettings}
-              disabled={isClearing}
-              variant="outline"
-              size="sm"
-              className="text-red-600 hover:text-red-700"
-            >
-              {isClearing ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Trash2 className="h-4 w-4" />
-              )}
-            </Button>
-          </div>
-
-          <Button
-            onClick={saveSettings}
-            disabled={!apiKey || isSaving}
-            size="sm"
-            variant={saveSuccess ? 'default' : 'default'}
-            className={saveSuccess ? 'bg-green-600 hover:bg-green-700 text-white' : ''}
-          >
-            {isSaving ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Saving...
-              </>
-            ) : saveSuccess ? (
-              <>
-                <CheckCircle className="h-4 w-4" />
-                Settings Saved!
-              </>
-            ) : (
-              'Save Settings'
-            )}
-          </Button>
-        </div>
+        )}
       </CardContent>
+
+      <ProviderConfigDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        config={editingConfig}
+        onSave={handleDialogSave}
+      />
     </Card>
   )
 }

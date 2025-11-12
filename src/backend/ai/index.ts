@@ -9,7 +9,7 @@ export { listAvailableModel } from './factory'
 
 export async function testConnection(config: AIConfig): Promise<boolean> {
   try {
-    const aiModel = await createModel(config.provider, config.apiKey, config.model)
+    const aiModel = await createModel(config)
     const result = _streamText({
       model: aiModel,
       messages: [{ role: 'user', content: 'Test' }]

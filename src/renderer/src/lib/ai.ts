@@ -1,6 +1,6 @@
 import { logger } from '@renderer/lib/logger'
 import { isOk, isError } from '@common/result'
-import type { AIMessage, AppEvent, ToolCallPayload, ToolResultPayload } from '@common/types'
+import type { AIMessage, AIModelSelection, AppEvent, ToolCallPayload, ToolResultPayload } from '@common/types'
 
 export type StreamChunk =
   | { type: 'text'; text: string }
@@ -9,9 +9,11 @@ export type StreamChunk =
 
 export async function streamText(
   messages: AIMessage[],
-  abortSignal: AbortSignal
+  abortSignal: AbortSignal,
+  modelSelection: AIModelSelection | null = null
 ): Promise<AsyncGenerator<StreamChunk, void, unknown>> {
-  const result = await window.backend.streamAIText(messages)
+  const options = modelSelection ? { modelSelection } : undefined
+  const result = await window.backend.streamAIText(messages, options)
 
   if (isOk(result)) {
     const sessionId = result.value

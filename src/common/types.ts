@@ -1,4 +1,4 @@
-export type AIProvider = 'openai' | 'anthropic' | 'google'
+export type AIProvider = 'openai' | 'anthropic' | 'google' | 'azure'
 
 export interface AIMessage {
   role: 'user' | 'assistant' | 'system'
@@ -24,8 +24,12 @@ export interface AIConfig {
   provider: AIProvider
   model: string
   apiKey: string
+  baseURL?: string // Custom endpoint (e.g., for OpenAI-compatible APIs)
+  resourceName?: string // Azure-specific: resource name
+  useDeploymentBasedUrls?: boolean // Azure-specific: use deployment-based URLs
 }
 
+// Legacy v1 settings (kept for backward compatibility)
 export interface AISettings {
   default_provider?: AIProvider
   openai_api_key?: string
@@ -34,6 +38,83 @@ export interface AISettings {
   anthropic_model?: string
   google_api_key?: string
   google_model?: string
+  azure_api_key?: string
+  azure_model?: string
+}
+
+// Provider-level configuration interfaces (used by both V1 and V2)
+export interface AIProviderConfig {
+  apiKey: string
+  baseURL?: string // Custom endpoint (e.g., for OpenAI-compatible APIs)
+  // Provider-specific options stored here
+  [key: string]: unknown
+}
+
+export interface AzureProviderConfig extends AIProviderConfig {
+  resourceName?: string
+  useDeploymentBasedUrls?: boolean
+}
+
+// v2 Settings with multiple provider configurations
+export interface AISettingsV2 {
+  version: 2
+
+  // Last used provider config + model combination
+  defaultSelection?: {
+    providerConfigId: string // References AIProviderConfiguration.id
+    modelId: string // References AIModelDefinition.id
+  }
+
+  // List of all provider configurations
+  providerConfigs: AIProviderConfiguration[]
+}
+
+/**
+ * Provider Configuration - A specific instance of a provider setup
+ * Example: "OpenAI Official", "LocalLM Server", "Azure Production"
+ */
+export interface AIProviderConfiguration {
+  id: string // UUID - unique identifier
+  name: string // User-friendly name (e.g., "OpenAI Official", "LocalLM")
+  type: AIProvider // Provider type: 'openai' | 'anthropic' | 'google' | 'azure'
+
+  // Connection settings
+  config: AIProviderConfig | AzureProviderConfig
+
+  // Model management
+  models: AIModelDefinition[] // Available models for this configuration
+  modelRefreshEnabled: boolean // Whether to auto-refresh models from API
+  modelLastRefreshed?: string // ISO 8601 timestamp of last API fetch
+
+  // Metadata
+  enabled: boolean // Whether this config is active
+  createdAt: string // ISO 8601
+  updatedAt: string // ISO 8601
+}
+
+/**
+ * Model Definition - Represents a specific model within a provider config
+ */
+export interface AIModelDefinition {
+  id: string // Model ID used in API calls (e.g., "gpt-4o", "gemini-2.5-flash")
+  displayName?: string // Optional custom display name
+  source: 'api' | 'custom' // How this model was added
+
+  // Availability tracking (for API-sourced models)
+  isAvailable?: boolean // Last known availability status
+  lastChecked?: string // ISO 8601 timestamp of last availability check
+
+  // Metadata
+  addedAt: string // ISO 8601 - when this model was added
+  description?: string // Optional description
+}
+
+/**
+ * Runtime model selection (used in chat interface)
+ */
+export interface AIModelSelection {
+  providerConfigId: string // Which provider config to use
+  modelId: string // Which model from that config
 }
 
 export class TimeoutError extends Error {
@@ -101,6 +182,14 @@ export interface BackendListenerAPI {
   offEvent: (channel: string) => void
 }
 
+// Options for AI text streaming
+export interface StreamAIOptions {
+  modelSelection?: AIModelSelection  // Use specific model selection (providerConfigId + modelId)
+  provider?: AIProvider              // Override provider
+  model?: string                     // Override model
+  parameters?: Record<string, unknown>  // Override parameters
+}
+
 export interface RendererBackendAPI {
   ping: () => Promise<Result<string>>
   getSetting: (key: string) => Promise<Result<unknown>>
@@ -109,10 +198,24 @@ export interface RendererBackendAPI {
   clearDatabase: () => Promise<Result<void>>
   getDatabasePath: () => Promise<Result<string>>
   getLogPath: () => Promise<Result<string>>
-  streamAIText: (messages: AIMessage[]) => Promise<Result<string>>
+  streamAIText: (messages: AIMessage[], options?: StreamAIOptions) => Promise<Result<string>>
   abortAIText: (sessionId: string) => Promise<Result<void>>
   getAIModels: (provider: AIProvider) => Promise<Result<string[]>>
   testAIProviderConnection: (config: AIConfig) => Promise<Result<boolean>>
+  // AI Settings v2 APIs
+  getAISettingsV2: () => Promise<Result<AISettingsV2>>
+  saveAISettingsV2: (settings: AISettingsV2) => Promise<Result<void>>
+  // Provider Configuration APIs
+  getProviderConfigurations: () => Promise<Result<AIProviderConfiguration[]>>
+  getProviderConfiguration: (configId: string) => Promise<Result<AIProviderConfiguration | undefined>>
+  createProviderConfiguration: (config: Omit<AIProviderConfiguration, 'id' | 'createdAt' | 'updatedAt'>) => Promise<Result<string>>
+  updateProviderConfiguration: (configId: string, updates: Partial<Omit<AIProviderConfiguration, 'id' | 'createdAt'>>) => Promise<Result<void>>
+  deleteProviderConfiguration: (configId: string) => Promise<Result<void>>
+  // Model Management APIs
+  addModelToConfiguration: (configId: string, model: Omit<AIModelDefinition, 'source' | 'addedAt'>) => Promise<Result<void>>
+  updateModelInConfiguration: (configId: string, modelId: string, updates: Partial<Omit<AIModelDefinition, 'id' | 'source' | 'addedAt'>>) => Promise<Result<void>>
+  deleteModelFromConfiguration: (configId: string, modelId: string) => Promise<Result<void>>
+  refreshModelsFromAPI: (configId: string) => Promise<Result<AIModelDefinition[]>>
   // MCP Server Management
   listMCPServers: () => Promise<Result<MCPServerWithStatus[]>>
   addMCPServer: (config: Omit<MCPServerConfig, 'id' | 'createdAt' | 'updatedAt'>) => Promise<Result<string>>

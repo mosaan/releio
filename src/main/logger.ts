@@ -1,8 +1,9 @@
 import { app, ipcMain } from 'electron'
 import log from 'electron-log/main'
 import path from 'path'
+import fs from 'fs'
 
-const isDev = process.env.NODE_ENV === 'development'
+const isDev = process.env.NODE_ENV === 'development' || import.meta.env.DEV
 
 function getLogFolder(): string {
   if (isDev) {
@@ -16,6 +17,11 @@ function getLogFolder(): string {
 
 export function initializeLogging(): void {
   const logFolder = getLogFolder()
+
+  // Ensure log folder exists
+  if (!fs.existsSync(logFolder)) {
+    fs.mkdirSync(logFolder, { recursive: true })
+  }
 
   // Initialize for renderer IPC
   log.initialize()
@@ -46,6 +52,16 @@ export function initializeLogging(): void {
   })
 
   log.eventLogger.startLogging({ level: 'warn' })
+
+  // Log initialization complete with configuration details
+  const logger = log.scope('main')
+  logger.info('Logging initialized', {
+    logFolder,
+    logFile: path.join(logFolder, 'app.log'),
+    isDev,
+    fileLevel: log.transports.file.level,
+    consoleLevel: log.transports.console.level
+  })
 }
 
 /**
