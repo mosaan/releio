@@ -306,7 +306,32 @@ This document will be updated after each phase to track:
 - ✅ Phase 2: Backend - Preset-based API (Commit 2b6bd44)
 - ✅ Phase 3: Settings UI - Provider Configuration (Commits 032d62f, 89b6bfb, c1b3b0c, dce6bbe, 626a517)
 - ✅ Phase 4: Chat UI - Preset Selector (Commit 37d12fc)
-- ⏳ Phase 5: Testing and Documentation (In Progress)
+- ✅ Phase 5: Bug Fixes and Improvements (Commits 57634b5, fbebd25, 67f94d6, d8b02d7, 800a79e)
+
+**⚠️ IMPORTANT: V2 Implementation Complete, V3 Design In Progress**
+
+The v2 implementation (preset-based model selection) has been completed and is functional. However, design review identified that the preset-based approach does not fully meet user requirements.
+
+**V2 Limitations Identified:**
+1. Cannot configure multiple instances of same provider type (e.g., both OpenAI official and OpenAI-compatible server)
+2. Model lists are hardcoded instead of fetched from API
+3. Chat UI uses preset selection instead of dynamic model selection from all available providers
+4. No support for custom model addition for compatible servers
+
+**Next Steps: V3 Design**
+A new architecture design (AISettingsV3) has been created to address these limitations:
+- **Document**: `docs/AI_SETTINGS_V3_DESIGN.md`
+- **Key Changes**:
+  - Multiple provider configurations per type with user-friendly names
+  - API-based model discovery with custom model support
+  - Chat UI shows all available models across all configurations
+  - Clear distinction between API-sourced and custom models
+
+**V2 → V3 Migration Plan:**
+- V2 implementation remains as a baseline
+- V3 will be implemented incrementally in future phases
+- Automatic migration from v2 to v3 will preserve user settings
+- See `AI_SETTINGS_V3_DESIGN.md` for detailed migration strategy
 
 ### Completed Work
 
@@ -368,6 +393,33 @@ This document will be updated after each phase to track:
 - Implemented localStorage persistence for last-used preset
 - Display disabled state for unconfigured providers
 - Show default preset with star (⭐) icon indicator
+
+#### Phase 5: Bug Fixes and Improvements
+**Commit 57634b5**: Fixed baseURL and Azure config not being passed to providers
+- Extended AIConfig interface with baseURL, resourceName, useDeploymentBasedUrls
+- Modified handler.ts to extract provider configuration and pass to AIConfig
+- Updated factory.ts to pass baseURL and Azure settings to SDK constructors
+- All providers now properly respect custom baseURL settings
+
+**Commit fbebd25**: Fixed Test Connection to include baseURL and Azure config
+- Updated AISettings.tsx testConnection() to include all provider settings in AIConfig
+- Ensured Test Connection and chat streaming use identical configuration code path
+- Both now share factory.ts createModel() for consistent behavior
+
+**Commit 67f94d6**: Fixed useDeploymentBasedUrls persistence (partial fix)
+- Changed from || to ?? operator for boolean handling
+- Added debug logging in frontend and backend for config operations
+
+**Commit d8b02d7**: Fixed useDeploymentBasedUrls persistence (root cause)
+- Identified JSON.stringify() removes undefined properties
+- Fixed loadProviderConfig condition from 'resourceName' in config to provider === 'azure'
+- Modified saveProviderConfig to conditionally add optional properties only when they have values
+- Ensures boolean fields persist correctly regardless of optional field population
+
+**Commit 800a79e**: Changed to Chat Completion API for OpenAI/Azure compatibility
+- Modified OpenAI and Azure providers to use .chat() method instead of default API
+- Improves compatibility with OpenAI-compatible servers that only support Chat Completion API
+- Documented future enhancement for API mode selection in ISSUE_10_IMPLEMENTATION_PLAN.md
 
 ## Technical Decisions
 
