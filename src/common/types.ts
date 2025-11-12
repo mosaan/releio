@@ -5,6 +5,21 @@ export interface AIMessage {
   content: string
 }
 
+// Tool call event payloads
+export interface ToolCallPayload {
+  sessionId: string
+  toolCallId: string
+  toolName: string
+  input: unknown
+}
+
+export interface ToolResultPayload {
+  sessionId: string
+  toolCallId: string
+  toolName: string
+  output: unknown
+}
+
 export interface AIConfig {
   provider: AIProvider
   model: string
