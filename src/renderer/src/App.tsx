@@ -10,39 +10,47 @@ function App() {
   const [currentPage, setCurrentPage] = useState<'home' | 'settings' | 'chat'>('home')
   const [backendConnected, setBackendConnected] = useState(false)
   const [isCheckingSettings, setIsCheckingSettings] = useState(true)
+  const [connectionError, setConnectionError] = useState<string | null>(null)
 
   useEffect(() => {
     const connectToBackend = async (): Promise<void> => {
-      await window.connectBackend()
-      setBackendConnected(true)
-      const result = await window.backend.ping()
-      if (isOk(result)) {
-        logger.info(`Backend ping successful: ${result.value}`)
-      }
+      try {
+        await window.connectBackend()
+        setBackendConnected(true)
+        const result = await window.backend.ping()
+        if (isOk(result)) {
+          logger.info(`Backend ping successful: ${result.value}`)
+        }
 
-      // Check AI settings to determine initial page
-      const settingsResult = await window.backend.getAISettingsV2()
-      if (isOk(settingsResult)) {
-        const hasProviderConfigs =
-          settingsResult.value?.providerConfigs &&
-          settingsResult.value.providerConfigs.length > 0
+        // Check AI settings to determine initial page
+        const settingsResult = await window.backend.getAISettingsV2()
+        if (isOk(settingsResult)) {
+          const hasProviderConfigs =
+            settingsResult.value?.providerConfigs &&
+            settingsResult.value.providerConfigs.length > 0
 
-        if (hasProviderConfigs) {
-          // AI is configured, go directly to chat
-          logger.info('AI settings found, navigating to chat')
-          setCurrentPage('chat')
+          if (hasProviderConfigs) {
+            // AI is configured, go directly to chat
+            logger.info('AI settings found, navigating to chat')
+            setCurrentPage('chat')
+          } else {
+            // No AI configuration, go to settings
+            logger.info('No AI settings found, navigating to settings')
+            setCurrentPage('settings')
+          }
         } else {
-          // No AI configuration, go to settings
-          logger.info('No AI settings found, navigating to settings')
+          // Failed to get settings, default to settings page
+          logger.warn('Failed to get AI settings, navigating to settings')
           setCurrentPage('settings')
         }
-      } else {
-        // Failed to get settings, default to settings page
-        logger.warn('Failed to get AI settings, navigating to settings')
-        setCurrentPage('settings')
+      } catch (error) {
+        logger.error('Failed to connect to backend:', error)
+        setConnectionError(
+          error instanceof Error ? error.message : 'Failed to connect to backend'
+        )
+      } finally {
+        setIsCheckingSettings(false)
       }
-
-      setIsCheckingSettings(false)
     }
 
     connectToBackend()
@@ -56,17 +64,58 @@ function App() {
     setCurrentPage('chat')
   }
 
+  const handleRetryConnection = (): void => {
+    setConnectionError(null)
+    setIsCheckingSettings(true)
+    window.location.reload()
+  }
+
   // Show loading state while checking settings
-  if (!backendConnected || isCheckingSettings) {
+  if (isCheckingSettings) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 dark:from-gray-900 dark:via-gray-800 dark:to-blue-900 flex items-center justify-center">
         <div className="text-center">
           <div className="text-2xl font-semibold text-gray-700 dark:text-gray-200 mb-4">
             Loading...
           </div>
-          <p className="text-gray-600 dark:text-gray-400">
-            Initializing application
+          <p className="text-gray-600 dark:text-gray-400">Initializing application</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Show error state if backend connection failed
+  if (connectionError) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 dark:from-gray-900 dark:via-gray-800 dark:to-blue-900 flex items-center justify-center">
+        <div className="text-center max-w-md mx-auto p-6">
+          <div className="text-red-600 dark:text-red-400 text-5xl mb-4">⚠️</div>
+          <div className="text-2xl font-semibold text-gray-700 dark:text-gray-200 mb-4">
+            Connection Failed
+          </div>
+          <p className="text-gray-600 dark:text-gray-400 mb-2">
+            Failed to connect to the backend process.
           </p>
+          <p className="text-sm text-gray-500 dark:text-gray-500 mb-6 font-mono bg-gray-100 dark:bg-gray-800 p-3 rounded">
+            {connectionError}
+          </p>
+          <Button onClick={handleRetryConnection} className="w-full">
+            Retry Connection
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  // Ensure backend is connected before showing any content
+  if (!backendConnected) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 dark:from-gray-900 dark:via-gray-800 dark:to-blue-900 flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-2xl font-semibold text-gray-700 dark:text-gray-200 mb-4">
+            Connecting...
+          </div>
+          <p className="text-gray-600 dark:text-gray-400">Establishing backend connection</p>
         </div>
       </div>
     )
