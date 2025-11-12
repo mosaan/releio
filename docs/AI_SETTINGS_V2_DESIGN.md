@@ -264,12 +264,14 @@ async function discoverModels(
       return await fetchOpenAIModels(apiKey, baseURL)
 
     case 'anthropic':
-      // Anthropic doesn't have model listing API - return empty
+      // Anthropic doesn't have model listing API
+      // Return empty array to preserve existing models
       return []
 
     case 'google':
-      // Google's model listing API
-      return await fetchGoogleModels(apiKey)
+      // Google Gemini doesn't have a simple model listing API
+      // Return empty array to preserve existing models
+      return []
 
     case 'azure':
       // Azure model listing based on deployment
@@ -451,8 +453,8 @@ async function refreshModelsFromAPI(configId: string): Promise<AIModelDefinition
 **Completed Tasks**:
 - ✅ Implement `discoverModels()` for each provider type:
   - OpenAI: Fetch from `/v1/models` endpoint with proxy/certificate support
-  - Anthropic: Use hardcoded FACTORY list (no API available)
-  - Google: Use hardcoded FACTORY list (no simple API)
+  - Anthropic: Return empty array (no API available, preserves existing models)
+  - Google: Return empty array (no simple API, preserves existing models)
   - Azure: Fetch from `/v1/models` with `api-key` header
 - ✅ Add API client code using `createCustomFetch()` for OpenAI/Azure model listing
 - ✅ Add refresh logic with error handling and graceful degradation

@@ -210,6 +210,26 @@ For technical design details, see `docs/PROXY_AND_CERTIFICATE_DESIGN.md`.
 - The backend process is separated from main for better organization and testing
 - Assistant UI provides pre-built components for chat interfaces with streaming support
 
+### Packaging and Environment Detection
+
+**Important**: The application uses reliable Electron APIs for environment detection:
+
+- **Main process** uses `app.isPackaged` to detect production builds (not `NODE_ENV`)
+- **Backend process** uses `process.resourcesPath !== undefined` to detect packaged state
+- **Logging** uses `app.isPackaged` for production detection (combined with `import.meta.env.DEV` fallback)
+
+**Resource files** (migrations, icons, etc.) are packaged via `electron-builder.yml`:
+- `extraResources` copies `resources/` folder to `process.resourcesPath` in production
+- Migrations accessed via `process.resourcesPath + '/db/migrations'` when packaged
+- Development uses `./resources/` from project root
+
+**User data paths** in production:
+- Windows: `C:\Users\<username>\AppData\Roaming\electron-ai-starter\`
+- macOS: `~/Library/Application Support/electron-ai-starter/`
+- Linux: `~/.config/electron-ai-starter/`
+
+See `src/main/paths.ts` and `src/backend/db/index.ts` for implementation details.
+
 ## Key Dependencies
 
 ### Core Framework
