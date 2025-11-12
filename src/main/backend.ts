@@ -1,4 +1,4 @@
-import { utilityProcess, MessageChannelMain, UtilityProcess, WebContents } from 'electron'
+import { utilityProcess, MessageChannelMain, UtilityProcess, WebContents, app } from 'electron'
 import logger from './logger'
 import { getBasePath } from './paths'
 import backendPath from '../backend/index?modulePath'
@@ -10,7 +10,11 @@ export class Backend {
 
   constructor() {
     const userDataPath = getBasePath()
-    this._process = utilityProcess.fork(backendPath, ['--user-data-path', userDataPath], {
+    // Pass app.isPackaged to backend for consistent environment detection
+    this._process = utilityProcess.fork(backendPath, [
+      '--user-data-path', userDataPath,
+      '--is-packaged', app.isPackaged.toString()
+    ], {
       stdio: 'pipe' // Enable stdout/stderr capture
     })
 
