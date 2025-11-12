@@ -493,12 +493,30 @@ async function refreshModelsFromAPI(configId: string): Promise<AIModelDefinition
 - Form validation (name and API key required)
 - Auto-reload after save
 
-### Phase 4: Chat UI Model Selection ⏳ NOT STARTED
-**Planned Tasks**:
-- Replace preset selector with grouped provider + model dropdown
-- Implement localStorage persistence for last selection
-- Update streaming API calls to use AIModelSelection
-- Use default AI SDK parameters (no customization in V3)
+### Phase 4: Chat UI Model Selection ✅ COMPLETE
+**Completed in commit 9ec2176** (2025-11-12)
+
+**Implementation Summary**:
+- ✅ Created `ModelSelector.tsx` component with provider-grouped dropdown
+- ✅ Replaced `PresetSelector` with `ModelSelector` in ChatPage
+- ✅ Implemented localStorage persistence for last AIModelSelection (JSON format)
+- ✅ Updated `AIRuntimeProvider` to accept `modelSelection` prop instead of `presetId`
+- ✅ Updated `streamText()` API to accept `modelSelection` parameter
+- ✅ Extended `StreamAIOptions` interface to support both V3 (`modelSelection`) and V2 (`presetId`)
+- ✅ Added V3 resolution logic to backend handler with V2 backward compatibility
+- ✅ Display model source indicators ("Custom") and default marker ("⭐")
+- ✅ Disable providers without API keys
+- ✅ Type checking passes (0 errors)
+
+**Files Modified**:
+- `src/renderer/src/components/ModelSelector.tsx` (new, 147 lines)
+- `src/renderer/src/components/ChatPage.tsx` (model selection + localStorage)
+- `src/renderer/src/components/AIRuntimeProvider.tsx` (modelSelection prop)
+- `src/renderer/src/lib/ai.ts` (modelSelection parameter)
+- `src/common/types.ts` (StreamAIOptions interface)
+- `src/backend/handler.ts` (V3 resolution logic)
+
+**Resolution Priority**: V3 modelSelection → V2 presetId → explicit provider/model → default preset → first preset → V1 fallback
 
 ### Phase 5: Testing & Migration ⏳ NOT STARTED
 **Planned Tasks**:
