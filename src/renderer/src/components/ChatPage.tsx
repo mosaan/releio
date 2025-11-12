@@ -5,7 +5,7 @@ import { Thread } from '@renderer/components/assistant-ui/thread'
 import { AIRuntimeProvider } from '@renderer/components/AIRuntimeProvider'
 import { ModelSelector } from '@renderer/components/ModelSelector'
 import { Alert, AlertDescription, AlertTitle } from '@renderer/components/ui/alert'
-import type { AIModelSelection } from '@common/types'
+import type { AIModelSelection, AISettingsV2 } from '@common/types'
 import { isOk } from '@common/result'
 
 interface ChatPageProps {
@@ -28,16 +28,27 @@ export function ChatPage({ onSettings }: ChatPageProps): React.JSX.Element {
     return null
   })
   const [hasProviderConfigs, setHasProviderConfigs] = useState<boolean>(true)
+  const [hasAvailableModels, setHasAvailableModels] = useState<boolean>(true)
 
-  // Check if there are any provider configurations
+  // Check if there are any provider configurations and available models
   useEffect(() => {
     const checkProviderConfigs = async (): Promise<void> => {
       await window.connectBackend()
       const result = await window.backend.getAISettingsV2()
       if (isOk(result)) {
-        const hasConfigs =
-          result.value?.providerConfigs && result.value.providerConfigs.length > 0
+        const settings: AISettingsV2 = result.value
+        const hasConfigs = settings?.providerConfigs && settings.providerConfigs.length > 0
         setHasProviderConfigs(hasConfigs)
+
+        // Check if there are any enabled providers with models
+        if (hasConfigs) {
+          const hasModels = settings.providerConfigs.some(
+            (config) => config.enabled && config.models.length > 0
+          )
+          setHasAvailableModels(hasModels)
+        } else {
+          setHasAvailableModels(false)
+        }
       }
     }
     checkProviderConfigs()
@@ -88,6 +99,33 @@ export function ChatPage({ onSettings }: ChatPageProps): React.JSX.Element {
                   <Settings className="mr-2 h-4 w-4" />
                   Go to Settings
                 </Button>
+              </AlertDescription>
+            </Alert>
+          </div>
+        ) : !hasAvailableModels ? (
+          <div className="h-full flex items-center justify-center p-4">
+            <Alert variant="destructive" className="max-w-md">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>No Available Models</AlertTitle>
+              <AlertDescription className="mt-2 space-y-3">
+                <p>
+                  Your AI providers are configured but no models are available. Please enable at
+                  least one provider configuration and ensure it has models.
+                </p>
+                <Button variant="outline" onClick={onSettings} className="w-full">
+                  <Settings className="mr-2 h-4 w-4" />
+                  Go to Settings
+                </Button>
+              </AlertDescription>
+            </Alert>
+          </div>
+        ) : !selectedModel ? (
+          <div className="h-full flex items-center justify-center p-4">
+            <Alert className="max-w-md">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>No Model Selected</AlertTitle>
+              <AlertDescription className="mt-2">
+                <p>Please select a model from the dropdown above to start chatting.</p>
               </AlertDescription>
             </Alert>
           </div>
