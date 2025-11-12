@@ -414,6 +414,13 @@ This document will be updated after each phase to track:
 
 ## Future Enhancements (Out of Scope)
 
+- **API Mode Selection for OpenAI-compatible Servers**:
+  - Current implementation uses Chat Completion API (`.chat()`) by default for better compatibility with OpenAI-compatible servers
+  - Many third-party OpenAI-compatible servers only support Chat Completion API, not the newer Response API
+  - Future enhancement: Add UI option to select between Chat Completion API and Response API per provider
+  - This would allow users to leverage Response API features (streaming improvements, better error handling) when the server supports it
+  - Reference: https://ai-sdk.dev/providers/ai-sdk-providers/openai#chat-models
+
 - Custom provider plugins
 - Preset import/export
 - Preset sharing via cloud sync

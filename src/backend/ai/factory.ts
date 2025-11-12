@@ -18,7 +18,7 @@ export const FACTORY = {
         apiKey: config.apiKey,
         baseURL: config.baseURL,
         fetch: customFetch
-      })(config.model)
+      }).chat(config.model) // Use Chat Completion API for better compatibility with OpenAI-compatible servers
   },
   anthropic: {
     default: 'claude-3-5-sonnet-20241022',
@@ -66,7 +66,7 @@ export const FACTORY = {
         azureConfig.useDeploymentBasedUrls = config.useDeploymentBasedUrls
       }
 
-      return createAzure(azureConfig)(config.model)
+      return createAzure(azureConfig).chat(config.model) // Use Chat Completion API
     }
   }
 }
