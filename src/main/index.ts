@@ -15,7 +15,7 @@ function main() {
 
     // Set app user model id for windows
     if (process.platform === 'win32') {
-      app.setAppUserModelId('com.electron-ai-starter')
+      app.setAppUserModelId('com.releio')
     }
 
     // Default open or close DevTools by F12 in development

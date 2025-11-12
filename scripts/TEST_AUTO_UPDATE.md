@@ -23,12 +23,12 @@ pnpm run build:win
 ```
 
 ビルド完了後、以下のファイルが生成されます：
-- `dist/electron-ai-starter-0.1.0-setup.exe`
+- `dist/releio-0.1.0-setup.exe`
 - `dist/latest.yml`
 
 ### ステップ2: 初期バージョンをインストール
 
-1. `dist/electron-ai-starter-0.1.0-setup.exe`を実行
+1. `dist/releio-0.1.0-setup.exe`を実行
 2. インストール完了後、アプリを**起動せず**次のステップへ
 
 ### ステップ3: 環境変数を設定（開発モード）
@@ -51,7 +51,7 @@ pnpm run build:win
 ```
 
 生成ファイル：
-- `dist/electron-ai-starter-0.2.0-setup.exe`
+- `dist/releio-0.2.0-setup.exe`
 - `dist/latest.yml`（0.2.0の情報に更新される）
 
 ### ステップ5: 更新サーバーのセットアップ
@@ -61,7 +61,7 @@ pnpm run build:win
 mkdir -p dist-updates
 
 # 新バージョンのファイルをコピー
-cp dist/electron-ai-starter-0.2.0-setup.exe dist-updates/
+cp dist/releio-0.2.0-setup.exe dist-updates/
 cp dist/latest.yml dist-updates/
 
 # SHA512ハッシュを確認（自動生成されているはず）
@@ -73,10 +73,10 @@ cat dist-updates/latest.yml
 version: 0.2.0
 releaseDate: '2025-11-12T07:00:00.000Z'
 files:
-  - url: electron-ai-starter-0.2.0-setup.exe
+  - url: releio-0.2.0-setup.exe
     sha512: abcd1234...（自動生成されたハッシュ）
     size: 123456789
-path: electron-ai-starter-0.2.0-setup.exe
+path: releio-0.2.0-setup.exe
 sha512: abcd1234...（自動生成されたハッシュ）
 releaseNotes: |
   ## 新機能
@@ -105,7 +105,7 @@ Hit CTRL-C to stop the server
 
 ブラウザで確認：
 - http://localhost:5000/latest.yml （YAMLファイルが表示されればOK）
-- http://localhost:5000/electron-ai-starter-0.2.0-setup.exe （ダウンロードが始まればOK）
+- http://localhost:5000/releio-0.2.0-setup.exe （ダウンロードが始まればOK）
 
 ### ステップ7: アプリを起動してテスト
 
@@ -194,7 +194,7 @@ pnpm run dev
 Windowsインストール後、以下の場所に`updater.json`を作成：
 
 ```
-C:\Users\<username>\AppData\Local\electron-ai-starter\updater.json
+C:\Users\<username>\AppData\Local\Releio\updater.json
 ```
 
 **updater.jsonの内容**:

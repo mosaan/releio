@@ -1,5 +1,5 @@
 {
-  "name": "electron-ai-starter",
+  "name": "releio",
   "version": "0.1.0",
   "description": "This template provides everything you need to build desktop applications with AI capabilities.",
   "main": "./out/main/index.js",

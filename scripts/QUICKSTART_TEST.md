@@ -40,7 +40,7 @@ sed -i 's/"version": "0.1.0"/"version": "0.2.0"/' package.json
 pnpm run build:win
 
 # 更新ファイルをコピー
-cp dist/electron-ai-starter-0.2.0-setup.exe dist-updates/
+cp dist/releio-0.2.0-setup.exe dist-updates/
 cp dist/latest.yml dist-updates/
 
 # 更新サーバーを起動

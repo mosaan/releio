@@ -32,7 +32,7 @@
 
    ```bash
    git clone <repository-url>
-   cd electron-ai-starter
+   cd releio
    ```
 
 2. **依存関係のインストール**
@@ -69,7 +69,7 @@
 ### プロジェクトのディレクトリ構造（初回ビルド後）
 
 ```
-electron-ai-starter/
+releio/
 ├── src/                  # ソースコード
 ├── out/                  # ビルド成果物（自動生成）
 ├── tmp/                  # 開発用一時ファイル（自動生成）
@@ -433,9 +433,9 @@ graph LR
 
 - **開発環境**: `./tmp/logs/app.log`
 - **本番環境**: Electron の userData ディレクトリ `/logs/app.log`
-  - Windows: `C:\Users\<username>\AppData\Roaming\electron-ai-starter\logs\app.log`
-  - macOS: `~/Library/Logs/electron-ai-starter/app.log`
-  - Linux: `~/.config/electron-ai-starter/logs/app.log`
+  - Windows: `C:\Users\<username>\AppData\Roaming\Releio\logs\app.log`
+  - macOS: `~/Library/Logs/Releio/app.log`
+  - Linux: `~/.config/Releio/logs/app.log`
 
 ### ログフォーマット
 
@@ -539,9 +539,9 @@ graph TB
     end
 
     subgraph Production[本番環境]
-        ProdWin["Windows:<br/>C:\Users\&lt;user&gt;\AppData\Roaming\electron-ai-starter\db\app.db"]
-        ProdMac["macOS:<br/>~/Library/Application Support/electron-ai-starter/db/app.db"]
-        ProdLinux["Linux:<br/>~/.config/electron-ai-starter/db/app.db"]
+        ProdWin["Windows:<br/>C:\Users\&lt;user&gt;\AppData\Roaming\Releio\db\app.db"]
+        ProdMac["macOS:<br/>~/Library/Application Support/Releio/db/app.db"]
+        ProdLinux["Linux:<br/>~/.config/Releio/db/app.db"]
     end
 ```
 
@@ -552,9 +552,9 @@ graph TB
 
 **本番環境**:
 - Electron の `userData` ディレクトリ内
-- **Windows**: `C:\Users\<username>\AppData\Roaming\electron-ai-starter\db\app.db`
-- **macOS**: `~/Library/Application Support/electron-ai-starter/db/app.db`
-- **Linux**: `~/.config/electron-ai-starter/db/app.db`
+- **Windows**: `C:\Users\<username>\AppData\Roaming\Releio\db\app.db`
+- **macOS**: `~/Library/Application Support/Releio/db/app.db`
+- **Linux**: `~/.config/Releio/db/app.db`
 
 ### データベーススキーマ
 
@@ -800,7 +800,7 @@ await db
 アプリケーションが使用する主なデータの保存場所：
 
 ```
-electron-ai-starter/
+releio/
 ├── tmp/                           # 開発環境のみ
 │   ├── db/app.db                  # データベース
 │   └── logs/app.log               # 統合ログ
@@ -983,9 +983,9 @@ grep -E '\[(main|backend)\]' ./tmp/logs/app.log
 
 本番ビルドの場合、統合ログは Electron の userData ディレクトリに保存されます：
 
-- **Windows**: `C:\Users\<username>\AppData\Roaming\electron-ai-starter\logs\app.log`
-- **macOS**: `~/Library/Logs/electron-ai-starter/app.log`
-- **Linux**: `~/.config/electron-ai-starter/logs/app.log`
+- **Windows**: `C:\Users\<username>\AppData\Roaming\Releio\logs\app.log`
+- **macOS**: `~/Library/Logs/Releio/app.log`
+- **Linux**: `~/.config/Releio/logs/app.log`
 
 ### よくあるデバッグシナリオ
 

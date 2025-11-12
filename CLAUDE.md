@@ -244,9 +244,9 @@ For detailed usage and testing instructions, see `docs/AUTO_UPDATE.md`.
 - Development uses `./resources/` from project root
 
 **User data paths** in production:
-- Windows: `C:\Users\<username>\AppData\Roaming\electron-ai-starter\`
-- macOS: `~/Library/Application Support/electron-ai-starter/`
-- Linux: `~/.config/electron-ai-starter/`
+- Windows: `C:\Users\<username>\AppData\Roaming\Releio\`
+- macOS: `~/Library/Application Support/Releio/`
+- Linux: `~/.config/Releio/`
 
 See `src/main/paths.ts` and `src/backend/db/index.ts` for implementation details.
 

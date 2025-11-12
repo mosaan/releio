@@ -4,10 +4,10 @@
 version: 0.2.0
 releaseDate: '2025-11-12T00:00:00.000Z'
 files:
-  - url: electron-ai-starter-0.2.0-setup.exe
+  - url: releio-0.2.0-setup.exe
     sha512: YOUR_SHA512_HASH_HERE
     size: 123456789
-path: electron-ai-starter-0.2.0-setup.exe
+path: releio-0.2.0-setup.exe
 sha512: YOUR_SHA512_HASH_HERE
 releaseNotes: |
   ## What's New in v0.2.0

@@ -402,7 +402,7 @@ Type: certificate
 4. **ログを確認:**
    - ログファイルの場所:
      - 開発環境: `./tmp/logs/app.log`
-     - 本番環境: `%APPDATA%/electron-ai-starter/logs/app.log`
+     - 本番環境: `%APPDATA%/Releio/logs/app.log`
    - エラーメッセージを確認
 
 **ログの例:**
@@ -519,6 +519,6 @@ Type: certificate
 2. プロキシ設定（認証情報は含めないでください）
 3. 証明書設定
 4. 接続テストの結果
-5. ログファイルの関連部分（`./tmp/logs/app.log` または `%APPDATA%/electron-ai-starter/logs/app.log`）
+5. ログファイルの関連部分（`./tmp/logs/app.log` または `%APPDATA%/Releio/logs/app.log`）
 
 **注意:** 認証情報（ユーザー名/パスワード、API キー）は送信しないでください。
