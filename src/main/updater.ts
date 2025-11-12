@@ -1,5 +1,6 @@
 import { app, BrowserWindow } from 'electron'
 import { autoUpdater } from 'electron-updater'
+import semver from 'semver'
 import logger from './logger'
 import type {
   UpdaterConfig,
@@ -224,22 +225,21 @@ export class Updater {
   }
 
   /**
-   * Compare version strings (semver-like)
+   * Compare version strings using semver
    * Returns: 1 if v1 > v2, -1 if v1 < v2, 0 if equal
+   * Properly handles prerelease identifiers (e.g., "1.0.0-beta.1")
    */
   private _compareVersions(v1: string, v2: string): number {
-    const parts1 = v1.split('.').map(Number)
-    const parts2 = v2.split('.').map(Number)
-    const maxLength = Math.max(parts1.length, parts2.length)
-
-    for (let i = 0; i < maxLength; i++) {
-      const p1 = parts1[i] || 0
-      const p2 = parts2[i] || 0
-
-      if (p1 > p2) return 1
-      if (p1 < p2) return -1
+    try {
+      // Use semver.compare which returns 0 if equal, 1 if v1 > v2, -1 if v1 < v2
+      const result = semver.compare(v1, v2)
+      return result
+    } catch (error) {
+      // Fallback to string comparison if semver parsing fails
+      logger.warn('[Updater] Failed to parse versions with semver, falling back to string comparison')
+      if (v1 > v2) return 1
+      if (v1 < v2) return -1
+      return 0
     }
-
-    return 0
   }
 }
