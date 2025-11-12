@@ -1,0 +1,10 @@
+{
+    "permissions": {
+        "allow": [
+            "WebFetch(domain:electronjs.org)",
+            "WebFetch(domain:shadcn.com)"
+        ],
+        "deny": [],
+        "ask": []
+    }
+}
