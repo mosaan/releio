@@ -13,6 +13,7 @@ import type {
 import { getSetting, setSetting } from './index'
 import logger from '../logger'
 import { FACTORY } from '../ai/factory'
+import { createCustomFetch } from '../ai/fetch'
 
 const aiLogger = logger.child('settings:ai')
 
@@ -611,9 +612,99 @@ export async function deleteModelFromConfiguration(
 }
 
 /**
+ * Discover available models from a provider API
+ * Returns list of model IDs available from the provider
+ */
+async function discoverModels(
+  providerType: AIProvider,
+  apiKey: string,
+  baseURL?: string
+): Promise<string[]> {
+  try {
+    switch (providerType) {
+      case 'openai': {
+        // Use OpenAI's /v1/models endpoint
+        const url = baseURL ? `${baseURL}/v1/models` : 'https://api.openai.com/v1/models'
+        const customFetch = await createCustomFetch()
+
+        aiLogger.debug(`Fetching OpenAI models from ${url}`)
+        const response = await customFetch(url, {
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            'Content-Type': 'application/json'
+          }
+        })
+
+        if (!response.ok) {
+          aiLogger.warn(`OpenAI models API returned ${response.status}: ${response.statusText}`)
+          return []
+        }
+
+        const data = await response.json()
+        const modelIds = data.data?.map((m: any) => m.id) || []
+        aiLogger.info(`Discovered ${modelIds.length} OpenAI models`)
+        return modelIds
+      }
+
+      case 'anthropic': {
+        // Anthropic doesn't have a model listing API
+        // Return hardcoded list from FACTORY
+        const models = FACTORY.anthropic.available
+        aiLogger.info(`Using hardcoded Anthropic models (${models.length} models)`)
+        return models
+      }
+
+      case 'google': {
+        // Google Gemini doesn't have a simple model listing API
+        // Return hardcoded list from FACTORY
+        const models = FACTORY.google.available
+        aiLogger.info(`Using hardcoded Google models (${models.length} models)`)
+        return models
+      }
+
+      case 'azure': {
+        // Azure OpenAI uses /v1/models endpoint (OpenAI-compatible)
+        if (!baseURL) {
+          aiLogger.warn('Azure model discovery requires baseURL')
+          return []
+        }
+
+        const url = `${baseURL}/v1/models`
+        const customFetch = await createCustomFetch()
+
+        aiLogger.debug(`Fetching Azure models from ${url}`)
+        const response = await customFetch(url, {
+          headers: {
+            'api-key': apiKey,
+            'Content-Type': 'application/json'
+          }
+        })
+
+        if (!response.ok) {
+          aiLogger.warn(`Azure models API returned ${response.status}: ${response.statusText}`)
+          return []
+        }
+
+        const data = await response.json()
+        const modelIds = data.data?.map((m: any) => m.id) || []
+        aiLogger.info(`Discovered ${modelIds.length} Azure models`)
+        return modelIds
+      }
+
+      default:
+        aiLogger.warn(`Unknown provider type: ${providerType}`)
+        return []
+    }
+  } catch (error) {
+    aiLogger.error(`Error discovering models for ${providerType}:`, error)
+    return []
+  }
+}
+
+/**
  * Refresh models from API for a provider configuration
- * NOTE: This function is a placeholder for Phase 2 implementation
- * It will use the discoverModels() API to fetch models from provider
+ * Replaces ALL API-sourced models with fresh data from the provider API
+ * Custom models are preserved
  */
 export async function refreshModelsFromAPI(configId: string): Promise<AIModelDefinition[]> {
   const settings = await getAISettingsV3()
@@ -623,12 +714,39 @@ export async function refreshModelsFromAPI(configId: string): Promise<AIModelDef
     throw new Error(`Provider configuration not found: ${configId}`)
   }
 
-  // TODO: Phase 2 - Implement actual API discovery
-  // const apiModelIds = await discoverModels(config.type, config.config.apiKey, config.config.baseURL)
+  aiLogger.info(`Refreshing models for ${config.name} (${config.type})`)
 
-  // For now, preserve existing models and log a warning
-  aiLogger.warn(
-    `refreshModelsFromAPI called for ${configId}, but API discovery not yet implemented (Phase 2)`
+  // Step 1: Fetch latest models from API
+  const apiModelIds = await discoverModels(config.type, config.config.apiKey, config.config.baseURL)
+
+  if (apiModelIds.length === 0) {
+    aiLogger.warn(
+      `No models discovered from API for ${config.name}. Keeping existing models unchanged.`
+    )
+    return config.models
+  }
+
+  // Step 2: Preserve custom models, replace ALL API-sourced models
+  const existingCustomModels = config.models.filter((m) => m.source === 'custom')
+  const now = new Date().toISOString()
+
+  const newApiModels: AIModelDefinition[] = apiModelIds.map((id) => ({
+    id,
+    source: 'api',
+    isAvailable: true,
+    lastChecked: now,
+    addedAt: now
+  }))
+
+  // Step 3: Combine custom models (preserved) + new API models (replaced)
+  config.models = [...existingCustomModels, ...newApiModels]
+  config.modelLastRefreshed = now
+  config.updatedAt = now
+
+  await saveAISettingsV3(settings)
+
+  aiLogger.info(
+    `Model refresh complete: ${newApiModels.length} API models, ${existingCustomModels.length} custom models`
   )
 
   return config.models
