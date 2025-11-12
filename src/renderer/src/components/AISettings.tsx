@@ -77,7 +77,7 @@ export function AISettings({ className = '' }: AISettingsProps): React.JSX.Eleme
       setApiKey(config.apiKey || '')
       setBaseURL(config.baseURL || '')
 
-      if (provider === 'azure' && 'resourceName' in config) {
+      if (provider === 'azure') {
         const azureConfig = config as AzureProviderConfig
         setAzureResourceName(azureConfig.resourceName || '')
         // Use ?? instead of || to properly handle boolean false
@@ -155,10 +155,17 @@ export function AISettings({ className = '' }: AISettingsProps): React.JSX.Eleme
       if (activeProvider === 'azure') {
         config = {
           apiKey,
-          baseURL: baseURL || undefined,
-          resourceName: azureResourceName || undefined,
           useDeploymentBasedUrls: azureUseDeploymentUrls
         } as AzureProviderConfig
+
+        // Add optional properties only if they have values
+        if (baseURL) {
+          config.baseURL = baseURL
+        }
+        if (azureResourceName) {
+          (config as AzureProviderConfig).resourceName = azureResourceName
+        }
+
         logger.debug('Saving Azure config:', {
           resourceName: azureResourceName,
           useDeploymentBasedUrls: azureUseDeploymentUrls,
@@ -166,8 +173,11 @@ export function AISettings({ className = '' }: AISettingsProps): React.JSX.Eleme
         })
       } else {
         config = {
-          apiKey,
-          baseURL: baseURL || undefined
+          apiKey
+        }
+        // Add baseURL only if it has a value
+        if (baseURL) {
+          config.baseURL = baseURL
         }
       }
 
