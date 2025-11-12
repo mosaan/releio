@@ -46,12 +46,39 @@ export function ChatPage({ onSettings }: ChatPageProps): React.JSX.Element {
             (config) => config.enabled && config.models.length > 0
           )
           setHasAvailableModels(hasModels)
+
+          // Validate selectedModel - check if it still exists in available models
+          // Get the current value from localStorage
+          const stored = localStorage.getItem(LAST_MODEL_SELECTION_KEY)
+          if (stored) {
+            try {
+              const storedSelection = JSON.parse(stored) as AIModelSelection
+              const selectedConfig = settings.providerConfigs.find(
+                (config) => config.id === storedSelection.providerConfigId
+              )
+              const modelExists =
+                selectedConfig &&
+                selectedConfig.enabled &&
+                selectedConfig.models.some((model) => model.id === storedSelection.modelId)
+
+              if (!modelExists) {
+                // Selected model is no longer available, reset to null
+                setSelectedModel(null)
+                localStorage.removeItem(LAST_MODEL_SELECTION_KEY)
+              }
+            } catch {
+              // Invalid stored data, remove it
+              localStorage.removeItem(LAST_MODEL_SELECTION_KEY)
+              setSelectedModel(null)
+            }
+          }
         } else {
           setHasAvailableModels(false)
         }
       }
     }
     checkProviderConfigs()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Persist model selection to localStorage
