@@ -22,7 +22,8 @@
     "build:win": "pnpm run build && electron-builder --win",
     "build:mac": "pnpm run build && electron-builder --mac",
     "build:linux": "pnpm run build && electron-builder --linux",
-    "shadcn": "TS_NODE_PROJECT=tsconfig.web.json npx shadcn@latest"
+    "shadcn": "TS_NODE_PROJECT=tsconfig.web.json npx shadcn@latest",
+    "update-server": "python3 scripts/test-update-server.py"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^2.0.44",

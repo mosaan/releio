@@ -1,0 +1,25 @@
+# Example latest.yml for testing Electron auto-update
+# Copy this to dist-updates/latest.yml and modify as needed
+
+version: 0.2.0
+releaseDate: '2025-11-12T00:00:00.000Z'
+files:
+  - url: electron-ai-starter-0.2.0-setup.exe
+    sha512: YOUR_SHA512_HASH_HERE
+    size: 123456789
+path: electron-ai-starter-0.2.0-setup.exe
+sha512: YOUR_SHA512_HASH_HERE
+releaseNotes: |
+  ## What's New in v0.2.0
+
+  ### Features
+  - Added auto-update functionality
+  - Improved UI performance
+
+  ### Bug Fixes
+  - Fixed memory leaks
+  - Corrected version comparison logic
+
+  ### Other Changes
+  - Updated dependencies
+  - Improved documentation
