@@ -298,7 +298,7 @@ export function ProviderConfigDialog({
         try {
           const result = await window.backend.deleteModelFromConfiguration(config.id, modelId)
           if (isOk(result)) {
-            setModels(models.filter((m) => m.id !== modelId))
+            setModels((prev) => prev.filter((m) => m.id !== modelId))
             logger.info(`Deleted model: ${modelId}`)
           } else {
             logger.error('Failed to delete model:', result.error)
