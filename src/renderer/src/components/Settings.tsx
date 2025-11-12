@@ -12,6 +12,16 @@ import {
   CardDescription,
   CardFooter
 } from '@renderer/components/ui/card'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle
+} from '@renderer/components/ui/alert-dialog'
 import { AISettingsV2Component } from './AISettings'
 import { ProxySettings } from './ProxySettings'
 import { MCPSettings } from './MCPSettings'
@@ -26,6 +36,7 @@ export function Settings({ onBack }: SettingsProps): React.JSX.Element {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [databasePath, setDatabasePath] = useState<string>('')
   const [logPath, setLogPath] = useState<string>('')
+  const [clearDbConfirmOpen, setClearDbConfirmOpen] = useState(false)
 
   // Connection test state
   const [isTesting, setIsTesting] = useState(false)
@@ -100,10 +111,6 @@ export function Settings({ onBack }: SettingsProps): React.JSX.Element {
   )
 
   const handleClearDatabase = async (): Promise<void> => {
-    if (!confirm('Are you sure you want to clear the database?')) {
-      return
-    }
-
     setIsClearingDatabase(true)
     setMessage(null)
 
@@ -123,6 +130,7 @@ export function Settings({ onBack }: SettingsProps): React.JSX.Element {
     }
 
     setIsClearingDatabase(false)
+    setClearDbConfirmOpen(false)
   }
 
   const testConnection = useCallback(async (): Promise<void> => {
@@ -307,7 +315,7 @@ export function Settings({ onBack }: SettingsProps): React.JSX.Element {
             <CardFooter>
               <Button
                 variant="destructive"
-                onClick={handleClearDatabase}
+                onClick={() => setClearDbConfirmOpen(true)}
                 disabled={isClearingDatabase}
                 className="flex items-center gap-2"
               >
@@ -330,6 +338,23 @@ export function Settings({ onBack }: SettingsProps): React.JSX.Element {
           </div>
         )}
       </div>
+
+      <AlertDialog open={clearDbConfirmOpen} onOpenChange={setClearDbConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Clear Database</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete all data from the database and close the application. You
+              will need to restart the application manually. This action cannot be undone. Are you
+              sure you want to continue?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleClearDatabase}>Clear Database</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

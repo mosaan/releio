@@ -20,6 +20,16 @@ import {
   DialogHeader,
   DialogTitle
 } from '@renderer/components/ui/dialog'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle
+} from '@renderer/components/ui/alert-dialog'
 import { Label } from '@renderer/components/ui/label'
 import { Input } from '@renderer/components/ui/input'
 
@@ -42,6 +52,8 @@ export function MCPSettings({ className }: MCPSettingsProps): React.JSX.Element 
   const [isLoading, setIsLoading] = useState(true)
   const [showDialog, setShowDialog] = useState(false)
   const [editingServer, setEditingServer] = useState<MCPServerWithStatus | null>(null)
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [serverToDelete, setServerToDelete] = useState<MCPServerWithStatus | null>(null)
   const [formData, setFormData] = useState<ServerFormData>({
     name: '',
     description: '',
@@ -215,17 +227,20 @@ export function MCPSettings({ className }: MCPSettingsProps): React.JSX.Element 
     }
   }
 
-  const handleDeleteServer = async (server: MCPServerWithStatus): Promise<void> => {
-    if (!confirm(`Are you sure you want to delete "${server.name}"?`)) {
-      return
-    }
+  const handleDeleteServer = (server: MCPServerWithStatus): void => {
+    setServerToDelete(server)
+    setDeleteConfirmOpen(true)
+  }
 
-    const result = await window.backend.removeMCPServer(server.id)
+  const confirmDelete = async (): Promise<void> => {
+    if (!serverToDelete) return
+
+    const result = await window.backend.removeMCPServer(serverToDelete.id)
 
     if (isOk(result)) {
       setMessage({
         type: 'success',
-        text: `Server "${server.name}" deleted successfully`
+        text: `Server "${serverToDelete.name}" deleted successfully`
       })
       await loadServers()
     } else {
@@ -235,6 +250,9 @@ export function MCPSettings({ className }: MCPSettingsProps): React.JSX.Element 
         text: `Failed to delete server: ${result.error}`
       })
     }
+
+    setDeleteConfirmOpen(false)
+    setServerToDelete(null)
   }
 
   const handleToggleEnabled = async (server: MCPServerWithStatus): Promise<void> => {
@@ -605,6 +623,24 @@ export function MCPSettings({ className }: MCPSettingsProps): React.JSX.Element 
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete MCP Server</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete &quot;{serverToDelete?.name}&quot;? This action
+              cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setDeleteConfirmOpen(false)}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete}>Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {message && !showDialog && (
         <div
