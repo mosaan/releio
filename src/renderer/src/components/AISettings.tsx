@@ -7,12 +7,23 @@ import {
   CardHeader,
   CardTitle
 } from '@renderer/components/ui/card'
-import { Plus, Edit, Trash2 } from 'lucide-react'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle
+} from '@renderer/components/ui/alert-dialog'
+import { Plus, Edit, Trash2, AlertCircle } from 'lucide-react'
 import type { AISettingsV2, AIProviderConfiguration } from '@common/types'
 import { isOk } from '@common/result'
 import { logger } from '@renderer/lib/logger'
 import { Switch } from '@renderer/components/ui/switch'
 import { Badge } from '@renderer/components/ui/badge'
+import { Alert, AlertDescription, AlertTitle } from '@renderer/components/ui/alert'
 import { ProviderConfigDialog } from './ProviderConfigDialog'
 
 interface AISettingsV2Props {
@@ -24,6 +35,8 @@ export function AISettingsV2Component({ className = '' }: AISettingsV2Props): Re
   const [isLoading, setIsLoading] = useState(true)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingConfig, setEditingConfig] = useState<AIProviderConfiguration | null>(null)
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [configToDelete, setConfigToDelete] = useState<AIProviderConfiguration | null>(null)
 
   // Load settings on mount
   useEffect(() => {
@@ -82,21 +95,27 @@ export function AISettingsV2Component({ className = '' }: AISettingsV2Props): Re
     }
   }
 
-  const handleDelete = async (config: AIProviderConfiguration): Promise<void> => {
-    if (!confirm(`Are you sure you want to delete "${config.name}"?`)) {
-      return
-    }
+  const handleDelete = (config: AIProviderConfiguration): void => {
+    setConfigToDelete(config)
+    setDeleteConfirmOpen(true)
+  }
+
+  const confirmDelete = async (): Promise<void> => {
+    if (!configToDelete) return
 
     try {
-      const result = await window.backend.deleteProviderConfiguration(config.id)
+      const result = await window.backend.deleteProviderConfiguration(configToDelete.id)
       if (isOk(result)) {
         await loadSettings()
-        logger.info(`Deleted provider configuration: ${config.name}`)
+        logger.info(`Deleted provider configuration: ${configToDelete.name}`)
       } else {
         logger.error('Failed to delete provider configuration:', result.error)
       }
     } catch (error) {
       logger.error('Failed to delete provider configuration:', error)
+    } finally {
+      setDeleteConfirmOpen(false)
+      setConfigToDelete(null)
     }
   }
 
@@ -145,6 +164,17 @@ export function AISettingsV2Component({ className = '' }: AISettingsV2Props): Re
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        {!settings || settings.providerConfigs.length === 0 ? (
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>No AI Provider Configured</AlertTitle>
+            <AlertDescription>
+              You need to configure at least one AI provider to use the chat feature. Click "Add New
+              Configuration" below to get started.
+            </AlertDescription>
+          </Alert>
+        ) : null}
+
         <Button className="w-full" variant="outline" onClick={handleAddNew}>
           <Plus className="mr-2 h-4 w-4" />
           Add New Configuration
@@ -227,6 +257,22 @@ export function AISettingsV2Component({ className = '' }: AISettingsV2Props): Re
         config={editingConfig}
         onSave={handleDialogSave}
       />
+
+      <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Provider Configuration</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete &quot;{configToDelete?.name}&quot;? This action cannot
+              be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setDeleteConfirmOpen(false)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete}>Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   )
 }

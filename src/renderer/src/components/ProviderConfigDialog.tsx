@@ -11,6 +11,16 @@ import {
   DialogTitle
 } from '@renderer/components/ui/dialog'
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle
+} from '@renderer/components/ui/alert-dialog'
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -62,6 +72,30 @@ export function ProviderConfigDialog({
   const [newModelId, setNewModelId] = useState('')
   const [newModelDisplayName, setNewModelDisplayName] = useState('')
 
+  // Alert dialog state
+  const [alertDialog, setAlertDialog] = useState<{
+    open: boolean
+    title: string
+    description: string
+  }>({
+    open: false,
+    title: '',
+    description: ''
+  })
+
+  // Confirmation dialog state
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean
+    title: string
+    description: string
+    onConfirm: () => void
+  }>({
+    open: false,
+    title: '',
+    description: '',
+    onConfirm: () => {}
+  })
+
   useEffect(() => {
     if (config && open) {
       setName(config.name)
@@ -94,7 +128,11 @@ export function ProviderConfigDialog({
 
   const handleSave = async (): Promise<void> => {
     if (!name.trim() || !apiKey.trim()) {
-      alert('Name and API Key are required')
+      setAlertDialog({
+        open: true,
+        title: 'Validation Error',
+        description: 'Name and API Key are required'
+      })
       return
     }
 
@@ -132,7 +170,11 @@ export function ProviderConfigDialog({
           onOpenChange(false)
         } else {
           logger.error('Failed to update provider configuration:', result.error)
-          alert('Failed to save configuration')
+          setAlertDialog({
+            open: true,
+            title: 'Save Failed',
+            description: 'Failed to save configuration. Please try again.'
+          })
         }
       } else {
         // Create new
@@ -151,12 +193,20 @@ export function ProviderConfigDialog({
           onOpenChange(false)
         } else {
           logger.error('Failed to create provider configuration:', result.error)
-          alert('Failed to create configuration')
+          setAlertDialog({
+            open: true,
+            title: 'Create Failed',
+            description: 'Failed to create configuration. Please try again.'
+          })
         }
       }
     } catch (error) {
       logger.error('Failed to save provider configuration:', error)
-      alert('Failed to save configuration')
+      setAlertDialog({
+        open: true,
+        title: 'Error',
+        description: 'Failed to save configuration. Please try again.'
+      })
     } finally {
       setIsSaving(false)
     }
@@ -195,7 +245,11 @@ export function ProviderConfigDialog({
 
   const handleAddCustomModel = async (): Promise<void> => {
     if (!config || !newModelId.trim()) {
-      alert('Model ID is required')
+      setAlertDialog({
+        open: true,
+        title: 'Validation Error',
+        description: 'Model ID is required'
+      })
       return
     }
 
@@ -217,34 +271,53 @@ export function ProviderConfigDialog({
         logger.info(`Added custom model: ${newModelId}`)
       } else {
         logger.error('Failed to add custom model:', result.error)
-        alert('Failed to add model. It may already exist.')
+        setAlertDialog({
+          open: true,
+          title: 'Add Model Failed',
+          description: 'Failed to add model. It may already exist.'
+        })
       }
     } catch (error) {
       logger.error('Failed to add custom model:', error)
-      alert('Failed to add model')
+      setAlertDialog({
+        open: true,
+        title: 'Error',
+        description: 'Failed to add model. Please try again.'
+      })
     }
   }
 
-  const handleDeleteModel = async (modelId: string): Promise<void> => {
+  const handleDeleteModel = (modelId: string): void => {
     if (!config) return
 
-    if (!confirm(`Are you sure you want to delete model "${modelId}"?`)) {
-      return
-    }
-
-    try {
-      const result = await window.backend.deleteModelFromConfiguration(config.id, modelId)
-      if (isOk(result)) {
-        setModels(models.filter((m) => m.id !== modelId))
-        logger.info(`Deleted model: ${modelId}`)
-      } else {
-        logger.error('Failed to delete model:', result.error)
-        alert('Failed to delete model')
+    setConfirmDialog({
+      open: true,
+      title: 'Delete Model',
+      description: `Are you sure you want to delete model "${modelId}"?`,
+      onConfirm: async () => {
+        try {
+          const result = await window.backend.deleteModelFromConfiguration(config.id, modelId)
+          if (isOk(result)) {
+            setModels((prev) => prev.filter((m) => m.id !== modelId))
+            logger.info(`Deleted model: ${modelId}`)
+          } else {
+            logger.error('Failed to delete model:', result.error)
+            setAlertDialog({
+              open: true,
+              title: 'Delete Failed',
+              description: 'Failed to delete model. Please try again.'
+            })
+          }
+        } catch (error) {
+          logger.error('Failed to delete model:', error)
+          setAlertDialog({
+            open: true,
+            title: 'Error',
+            description: 'Failed to delete model. Please try again.'
+          })
+        }
       }
-    } catch (error) {
-      logger.error('Failed to delete model:', error)
-      alert('Failed to delete model')
-    }
+    })
   }
 
   return (
@@ -467,6 +540,50 @@ export function ProviderConfigDialog({
           </Button>
         </DialogFooter>
       </DialogContent>
+
+      {/* Alert Dialog for errors and info */}
+      <AlertDialog
+        open={alertDialog.open}
+        onOpenChange={(open) => setAlertDialog({ ...alertDialog, open })}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{alertDialog.title}</AlertDialogTitle>
+            <AlertDialogDescription>{alertDialog.description}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => setAlertDialog({ ...alertDialog, open: false })}>
+              OK
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Confirmation Dialog */}
+      <AlertDialog
+        open={confirmDialog.open}
+        onOpenChange={(open) => setConfirmDialog({ ...confirmDialog, open })}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{confirmDialog.title}</AlertDialogTitle>
+            <AlertDialogDescription>{confirmDialog.description}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConfirmDialog({ ...confirmDialog, open: false })}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                confirmDialog.onConfirm()
+                setConfirmDialog({ ...confirmDialog, open: false })
+              }}
+            >
+              Confirm
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   )
 }
