@@ -5,6 +5,7 @@ import type {
   AIConfig,
   AISettings,
   AISettingsV2,
+  AISettingsV3,
   AIMessage,
   AppEvent,
   MCPServerConfig,
@@ -18,7 +19,9 @@ import type {
   StreamAIOptions,
   AIModelPreset,
   AIProviderConfig,
-  AzureProviderConfig
+  AzureProviderConfig,
+  AIProviderConfiguration,
+  AIModelDefinition
 } from '@common/types'
 import { ok, error, isOk } from '@common/result'
 import { dirname } from 'path'
@@ -40,7 +43,19 @@ import {
   updateAIPreset as modifyAIPreset,
   deleteAIPreset as removeAIPreset,
   updateProviderConfig as modifyProviderConfig,
-  getProviderConfig as loadProviderConfig
+  getProviderConfig as loadProviderConfig,
+  // V3 functions
+  getAISettingsV3 as loadAISettingsV3,
+  saveAISettingsV3,
+  getProviderConfigurations as loadProviderConfigurations,
+  getProviderConfiguration as loadProviderConfiguration,
+  createProviderConfiguration as newProviderConfiguration,
+  updateProviderConfiguration as modifyProviderConfiguration,
+  deleteProviderConfiguration as removeProviderConfiguration,
+  addModelToConfiguration,
+  updateModelInConfiguration,
+  deleteModelFromConfiguration,
+  refreshModelsFromAPI
 } from './settings/ai-settings'
 
 export class Handler {
@@ -372,5 +387,76 @@ export class Handler {
     args: unknown
   ): Promise<Result<unknown, string>> {
     return await mcpManager.callTool(serverId, toolName, args)
+  }
+
+  // AI Settings v3 handlers
+  async getAISettingsV3(): Promise<Result<AISettingsV3>> {
+    const settings = await loadAISettingsV3()
+    return ok(settings)
+  }
+
+  async saveAISettingsV3(settings: AISettingsV3): Promise<Result<void>> {
+    await saveAISettingsV3(settings)
+    return ok(undefined)
+  }
+
+  async getProviderConfigurations(): Promise<Result<AIProviderConfiguration[]>> {
+    const configs = await loadProviderConfigurations()
+    return ok(configs)
+  }
+
+  async getProviderConfiguration(configId: string): Promise<Result<AIProviderConfiguration | undefined>> {
+    const config = await loadProviderConfiguration(configId)
+    return ok(config)
+  }
+
+  async createProviderConfiguration(
+    config: Omit<AIProviderConfiguration, 'id' | 'createdAt' | 'updatedAt'>
+  ): Promise<Result<string>> {
+    const configId = await newProviderConfiguration(config)
+    return ok(configId)
+  }
+
+  async updateProviderConfiguration(
+    configId: string,
+    updates: Partial<Omit<AIProviderConfiguration, 'id' | 'createdAt'>>
+  ): Promise<Result<void>> {
+    await modifyProviderConfiguration(configId, updates)
+    return ok(undefined)
+  }
+
+  async deleteProviderConfiguration(configId: string): Promise<Result<void>> {
+    await removeProviderConfiguration(configId)
+    return ok(undefined)
+  }
+
+  async addModelToConfiguration(
+    configId: string,
+    model: Omit<AIModelDefinition, 'source' | 'addedAt'>
+  ): Promise<Result<void>> {
+    await addModelToConfiguration(configId, model)
+    return ok(undefined)
+  }
+
+  async updateModelInConfiguration(
+    configId: string,
+    modelId: string,
+    updates: Partial<Omit<AIModelDefinition, 'id' | 'source' | 'addedAt'>>
+  ): Promise<Result<void>> {
+    await updateModelInConfiguration(configId, modelId, updates)
+    return ok(undefined)
+  }
+
+  async deleteModelFromConfiguration(
+    configId: string,
+    modelId: string
+  ): Promise<Result<void>> {
+    await deleteModelFromConfiguration(configId, modelId)
+    return ok(undefined)
+  }
+
+  async refreshModelsFromAPI(configId: string): Promise<Result<AIModelDefinition[]>> {
+    const models = await refreshModelsFromAPI(configId)
+    return ok(models)
   }
 }
