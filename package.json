@@ -23,7 +23,7 @@
     "build:mac": "pnpm run build && electron-builder --mac",
     "build:linux": "pnpm run build && electron-builder --linux",
     "shadcn": "TS_NODE_PROJECT=tsconfig.web.json npx shadcn@latest",
-    "update-server": "python3 scripts/test-update-server.py"
+    "update-server": "http-server dist-updates -p 5000 --cors -o"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^2.0.44",
@@ -76,6 +76,7 @@
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.19",
+    "http-server": "^14.1.1",
     "lucide-react": "^0.525.0",
     "prettier": "^3.5.3",
     "react": "^19.1.0",

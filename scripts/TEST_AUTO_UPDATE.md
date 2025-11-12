@@ -6,7 +6,6 @@
 
 - Node.js 20以上
 - pnpm
-- Python 3（簡易サーバー用）
 
 ## テスト手順
 
@@ -88,11 +87,23 @@ releaseNotes: |
 ### ステップ6: 更新サーバーを起動
 
 ```bash
-# Python簡易サーバーを起動
-python3 scripts/test-update-server.py 5000
+# Node.js HTTP サーバーを起動
+pnpm run update-server
 ```
 
-サーバーが起動したら、ブラウザで確認：
+サーバーが起動したら、以下のように表示されます：
+```
+Starting up http-server, serving dist-updates
+
+http-server version: 14.1.1
+
+Available on:
+  http://127.0.0.1:5000
+  http://192.168.x.x:5000
+Hit CTRL-C to stop the server
+```
+
+ブラウザで確認：
 - http://localhost:5000/latest.yml （YAMLファイルが表示されればOK）
 - http://localhost:5000/electron-ai-starter-0.2.0-setup.exe （ダウンロードが始まればOK）
 
@@ -205,7 +216,7 @@ C:\Users\<username>\AppData\Local\electron-ai-starter\updater.json
 ### ステップ3: 更新サーバーを起動
 
 ```bash
-python3 scripts/test-update-server.py 5000
+pnpm run update-server
 ```
 
 ### ステップ4: アプリ起動

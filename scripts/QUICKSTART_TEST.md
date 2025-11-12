@@ -49,18 +49,14 @@ pnpm run update-server
 
 **出力例**:
 ```
-============================================================
-Electron Update Server Running
-============================================================
-URL: http://localhost:5000
-Directory: /path/to/electron-ai-starter/dist-updates
-============================================================
+Starting up http-server, serving dist-updates
 
-Place your update files in dist-updates/:
-  - latest.yml
-  - electron-ai-starter-X.X.X-setup.exe
+http-server version: 14.1.1
 
-Press Ctrl+C to stop the server
+Available on:
+  http://127.0.0.1:5000
+  http://192.168.x.x:5000
+Hit CTRL-C to stop the server
 ```
 
 ### ターミナル3: アプリを起動してテスト
