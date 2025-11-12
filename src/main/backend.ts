@@ -104,6 +104,16 @@ export class Backend {
   }
 
   connectRenderer(renderer: WebContents): void {
+    // Prevent connecting to a dead backend process
+    if (this._hasStopped || !this._isRunning) {
+      logger.warn('Ignoring connectRenderer request - backend has stopped', {
+        rendererId: renderer.id,
+        hasStopped: this._hasStopped,
+        isRunning: this._isRunning
+      })
+      return
+    }
+
     const messageChannel = new MessageChannelMain()
     this._messageChannels.set(renderer.id, messageChannel)
     const backendPort = messageChannel.port1
