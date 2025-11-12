@@ -16,6 +16,7 @@ export class Updater {
   private _updateInfo: UpdateInfo | null = null
   private _isDownloading = false
   private _config: UpdaterConfig | null = null
+  private _isQuittingToInstall = false
 
   constructor() {
     // Configure electron-updater logger
@@ -24,6 +25,13 @@ export class Updater {
     autoUpdater.autoInstallOnAppQuit = false
 
     this._setupEventHandlers()
+  }
+
+  /**
+   * Check if the updater is currently quitting to install an update
+   */
+  public isQuittingToInstall(): boolean {
+    return this._isQuittingToInstall
   }
 
   /**
@@ -137,9 +145,14 @@ export class Updater {
     }
 
     logger.info('[Updater] Quitting and installing update...')
+    // Set flag to prevent before-quit handler from interfering
+    this._isQuittingToInstall = true
+
     // setImmediate ensures all pending operations complete before quit
     setImmediate(() => {
+      // Remove event listeners to prevent interference with installer launch
       app.removeAllListeners('window-all-closed')
+      app.removeAllListeners('before-quit')
       if (this._mainWindow) {
         this._mainWindow.removeAllListeners('close')
         this._mainWindow.close()

@@ -58,7 +58,13 @@ function main() {
   })
 
   app.on('before-quit', async (event) => {
-    console.log('before-quit')
+    // Allow updater to quit and install without interference
+    if (server?.getUpdater().isQuittingToInstall()) {
+      logger.info('before-quit: Updater is installing, allowing quit')
+      return
+    }
+
+    logger.info('before-quit: Shutting down gracefully')
     event.preventDefault()
     await server!.shutdown()
     app.exit(0)
