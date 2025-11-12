@@ -105,13 +105,10 @@ type AIProviderType = 'openai' | 'anthropic' | 'google' | 'azure'
 interface AIModelSelection {
   providerConfigId: string      // Which provider config to use
   modelId: string               // Which model from that config
-  parameters?: {                // Optional runtime parameters
-    temperature?: number
-    maxTokens?: number
-    topP?: number
-    topK?: number
-    [key: string]: unknown
-  }
+
+  // Note: Parameters (temperature, maxTokens, etc.) are NOT supported in V3
+  // They will use default values from the AI SDK
+  // Future enhancement: Add parameter preset support (see Future Enhancements section)
 }
 ```
 
@@ -267,6 +264,42 @@ async function discoverModels(
 }
 ```
 
+### Model Refresh Logic
+
+When refreshing models from API for a provider configuration:
+
+```typescript
+async function refreshModelsFromAPI(configId: string): Promise<AIModelDefinition[]> {
+  const config = await getProviderConfig(configId)
+
+  // Step 1: Fetch latest models from API
+  const apiModelIds = await discoverModels(config.type, config.config.apiKey, config.config.baseURL)
+
+  // Step 2: Replace ALL API-sourced models with fresh list
+  const existingCustomModels = config.models.filter(m => m.source === 'custom')
+  const newApiModels = apiModelIds.map(id => ({
+    id,
+    source: 'api' as const,
+    isAvailable: true,
+    lastChecked: new Date().toISOString(),
+    addedAt: new Date().toISOString()
+  }))
+
+  // Step 3: Combine: custom models (preserved) + new API models (replaced)
+  config.models = [...existingCustomModels, ...newApiModels]
+  config.modelLastRefreshed = new Date().toISOString()
+
+  await updateProviderConfig(configId, config)
+  return config.models
+}
+```
+
+**Key Behavior**:
+- API-sourced models are **completely replaced** with the latest API response
+- Deprecated models naturally disappear (no longer in API response)
+- Custom models are **preserved** and unaffected by refresh
+- This ensures the model list stays current with provider changes
+
 ## UI/UX Changes
 
 ### Settings Page Redesign
@@ -358,8 +391,6 @@ async function discoverModels(
 │             - gemini-2.5-pro                 │
 │             - gemini-2.5-flash               │
 │                                              │
-│ [Advanced Parameters ▼]  (Optional)         │
-│                                              │
 ├─────────────────────────────────────────────┤
 │  Chat messages...                            │
 └─────────────────────────────────────────────┘
@@ -371,6 +402,11 @@ async function discoverModels(
 - Display model count per configuration
 - Gray out unavailable models (if API reported unavailability)
 - Persist last selection to localStorage
+
+**Note on Parameters**:
+- V3 does not support per-request parameter customization (temperature, maxTokens, etc.)
+- All models use default parameters from AI SDK
+- See Future Enhancements for planned parameter preset support
 
 ## Implementation Phases
 
@@ -396,7 +432,7 @@ async function discoverModels(
 - Replace preset selector with grouped provider + model dropdown
 - Implement localStorage persistence for last selection
 - Update streaming API calls to use AIModelSelection
-- Add optional parameters panel (temperature, etc.)
+- Use default AI SDK parameters (no customization in V3)
 
 ### Phase 5: Testing & Migration
 - Test v2 → v3 migration with various scenarios
@@ -440,13 +476,60 @@ async function discoverModels(
 - Automatic rotation on rate limit
 - Load balancing across keys
 
+## Design Decisions (Resolved)
+
+### 1. Model Alias Support
+**Decision**: Not supported in V3
+**Rationale**: Adds complexity without clear user benefit. Users can distinguish models by provider config name + model ID.
+
+### 2. Model Deprecation Handling
+**Decision**: API-sourced models are completely replaced on refresh
+**Behavior**:
+- When refreshing from API, all existing API-sourced models are deleted
+- New API response becomes the complete list of API-sourced models
+- Deprecated models naturally disappear (not in new API response)
+- Custom models are preserved and unaffected
+
+### 3. Import/Export Support
+**Decision**: Not supported in V3
+**Rationale**: Deferred to future enhancement. Focus on core functionality first.
+
+### 4. Model Version Tracking
+**Decision**: Not supported in V3
+**Rationale**: Use model IDs directly from API as-is. No version management needed since API returns current model IDs.
+
+### 5. Parameter Customization
+**Decision**: Not supported in V3
+**Rationale**:
+- V2's preset-based approach (provider + model + parameters) was overly complex
+- V3 focuses on provider config + model selection
+- Parameters use AI SDK defaults (temperature, maxTokens, etc.)
+- Future enhancement: Parameter presets as separate feature (see Future Enhancements)
+
 ## Open Questions
 
-1. **Model Alias Support**: Should users be able to create aliases for models? (e.g., "My Best Model" → "gpt-4o")
-2. **Model Deprecation Handling**: How to handle when API stops returning a previously available model?
-3. **Configuration Templates**: Should we provide templates for popular compatible servers (Ollama, LM Studio, etc.)?
-4. **Import/Export**: Should configurations be exportable/importable for sharing?
-5. **Model Version Tracking**: Should we track model versions/snapshots (e.g., gpt-4o-2024-11-20)?
+### Configuration Templates
+
+**Question**: Should we provide pre-configured templates for popular OpenAI-compatible servers?
+
+**Context**: Popular local/compatible servers include:
+- **Ollama** (http://localhost:11434)
+- **LM Studio** (http://localhost:1234)
+- **LocalAI** (various ports)
+- **Text Generation WebUI** (http://localhost:5000)
+
+**Possible Approach**:
+- Add "Create from Template" button in provider config list
+- Show template selection dialog with popular server presets
+- Template includes: name, base URL, provider type (usually 'openai')
+- User still needs to add API key and custom models
+
+**Question for User**:
+- Would this feature be useful, or is manual configuration sufficient?
+- Should templates be hardcoded or user-configurable?
+- What specific servers should be included in default templates?
+
+**Current Decision**: Pending user feedback
 
 ## References
 
