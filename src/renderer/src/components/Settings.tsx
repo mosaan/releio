@@ -12,7 +12,7 @@ import {
   CardDescription,
   CardFooter
 } from '@renderer/components/ui/card'
-import { AISettings } from './AISettings'
+import { AISettingsV3Component } from './AISettingsV3'
 import { ProxySettings } from './ProxySettings'
 import { MCPSettings } from './MCPSettings'
 import { CertificateSettings } from './CertificateSettings'
@@ -221,7 +221,7 @@ export function Settings({ onBack }: SettingsProps): React.JSX.Element {
           </Card>
 
           <MCPSettings className="shadow-sm" />
-          <AISettings className="shadow-sm" />
+          <AISettingsV3Component className="shadow-sm" />
 
           <ProxySettings className="shadow-sm" />
 
