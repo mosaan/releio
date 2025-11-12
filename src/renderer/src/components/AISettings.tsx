@@ -34,16 +34,32 @@ export function AISettingsV2Component({ className = '' }: AISettingsV2Props): Re
     try {
       await window.connectBackend()
       const result = await window.backend.getAISettingsV2()
+
+      // Debug: Log the entire result
+      console.log('getAISettingsV2 result:', JSON.stringify(result, null, 2))
+
       if (isOk(result)) {
-        setSettings(result.value)
-        logger.info('Loaded AI settings v3', {
-          providerCount: result.value.providerConfigs.length
+        // Debug: Check if providerConfigs exists
+        console.log('result.value:', result.value)
+        console.log('providerConfigs:', result.value?.providerConfigs)
+
+        // Defensive: Ensure providerConfigs array exists
+        const sanitizedSettings: AISettingsV2 = {
+          version: 2,
+          providerConfigs: result.value?.providerConfigs || [],
+          defaultSelection: result.value?.defaultSelection
+        }
+
+        setSettings(sanitizedSettings)
+        logger.info('Loaded AI settings v2', {
+          providerCount: sanitizedSettings.providerConfigs.length
         })
       } else {
-        logger.error('Failed to load AI settings v3:', result.error)
+        logger.error('Failed to load AI settings v2:', result.error)
       }
     } catch (error) {
       logger.error('Failed to load AI settings:', error)
+      console.error('Full error details:', error)
     } finally {
       setIsLoading(false)
     }

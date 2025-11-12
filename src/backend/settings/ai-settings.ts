@@ -112,6 +112,17 @@ export async function getAISettingsV2(): Promise<AISettingsV2> {
     // Try to get v2 settings first
     const v2Settings = await getSetting<AISettingsV2>('ai_v2')
     if (v2Settings && v2Settings.version === 2) {
+      // Defensive: Ensure providerConfigs array exists
+      if (!v2Settings.providerConfigs || !Array.isArray(v2Settings.providerConfigs)) {
+        aiLogger.warn('v2 settings missing or invalid providerConfigs, reinitializing')
+        const fixedSettings: AISettingsV2 = {
+          version: 2,
+          providerConfigs: [],
+          defaultSelection: v2Settings.defaultSelection
+        }
+        await setSetting('ai_v2', fixedSettings)
+        return fixedSettings
+      }
       aiLogger.debug('Loaded AI settings v2')
       return v2Settings
     }
