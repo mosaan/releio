@@ -55,6 +55,18 @@ export class Server {
     testCertificateConnection: (...args) => this._invoke('testCertificateConnection', ...args),
     testCombinedConnection: (...args) => this._invoke('testCombinedConnection', ...args),
     testFullConnection: (...args) => this._invoke('testFullConnection', ...args),
+    // AI Settings v3 APIs
+    getAISettingsV3: (...args) => this._invoke('getAISettingsV3', ...args),
+    saveAISettingsV3: (...args) => this._invoke('saveAISettingsV3', ...args),
+    getProviderConfigurations: (...args) => this._invoke('getProviderConfigurations', ...args),
+    getProviderConfiguration: (...args) => this._invoke('getProviderConfiguration', ...args),
+    createProviderConfiguration: (...args) => this._invoke('createProviderConfiguration', ...args),
+    updateProviderConfiguration: (...args) => this._invoke('updateProviderConfiguration', ...args),
+    deleteProviderConfiguration: (...args) => this._invoke('deleteProviderConfiguration', ...args),
+    addModelToConfiguration: (...args) => this._invoke('addModelToConfiguration', ...args),
+    updateModelInConfiguration: (...args) => this._invoke('updateModelInConfiguration', ...args),
+    deleteModelFromConfiguration: (...args) => this._invoke('deleteModelFromConfiguration', ...args),
+    refreshModelsFromAPI: (...args) => this._invoke('refreshModelsFromAPI', ...args),
     onEvent: (channel: string, callback: (appEvent: AppEvent) => void) => {
       this._backendConnection!.onEvent(channel, callback)
     },

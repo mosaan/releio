@@ -253,6 +253,30 @@ export interface RendererBackendAPI {
     certSettings: CertificateSettings
   ) => Promise<Result<ConnectionTestResult>>
   testFullConnection: () => Promise<Result<ConnectionTestResult, string>>
+  // AI Settings v3 APIs
+  getAISettingsV3: () => Promise<Result<AISettingsV3>>
+  saveAISettingsV3: (settings: AISettingsV3) => Promise<Result<void>>
+  getProviderConfigurations: () => Promise<Result<AIProviderConfiguration[]>>
+  getProviderConfiguration: (configId: string) => Promise<Result<AIProviderConfiguration | undefined>>
+  createProviderConfiguration: (
+    config: Omit<AIProviderConfiguration, 'id' | 'createdAt' | 'updatedAt'>
+  ) => Promise<Result<string>>
+  updateProviderConfiguration: (
+    configId: string,
+    updates: Partial<Omit<AIProviderConfiguration, 'id' | 'createdAt'>>
+  ) => Promise<Result<void>>
+  deleteProviderConfiguration: (configId: string) => Promise<Result<void>>
+  addModelToConfiguration: (
+    configId: string,
+    model: Omit<AIModelDefinition, 'source' | 'addedAt'>
+  ) => Promise<Result<void>>
+  updateModelInConfiguration: (
+    configId: string,
+    modelId: string,
+    updates: Partial<Omit<AIModelDefinition, 'id' | 'source' | 'addedAt'>>
+  ) => Promise<Result<void>>
+  deleteModelFromConfiguration: (configId: string, modelId: string) => Promise<Result<void>>
+  refreshModelsFromAPI: (configId: string) => Promise<Result<AIModelDefinition[]>>
 }
 
 export interface RendererMainAPI {
