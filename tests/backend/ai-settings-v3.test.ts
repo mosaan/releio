@@ -73,9 +73,9 @@ describe('AI Settings V3', () => {
         defaultPresetId: 'preset-1'
       }
 
-      // Save V2 settings
+      // Save V2 settings to the correct key
       const { setSetting } = await import('@backend/settings')
-      await setSetting('ai', v2Settings)
+      await setSetting('ai_v2', v2Settings)
 
       // Load as V3 (should auto-migrate)
       const v3Settings = await getAISettingsV3()
