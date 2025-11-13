@@ -82,7 +82,7 @@ The relevant files you will be working with are:
 - `src/preload/index.ts`: Expose the IPC methods to the renderer as `window.api.createChatSession(...)`, etc.
 - `src/renderer/src/components/` (new files): Create `SessionList.tsx` (shows all sessions in a sidebar), `ChatPanel.tsx` (wraps the chat interface with a header showing session info), and related UI components.
 - `src/renderer/src/contexts/SessionManager.tsx` (new file): A React Context that holds the current session state and provides functions to switch sessions, create new ones, etc.
-- `src/backend/ai/stream.ts`: The file that orchestrates AI streaming. You will add hooks here to call `chatSessionStore.updateToolCallResult(...)` when tool results arrive.
+- `src/backend/ai/stream.ts`: The file that orchestrates AI streaming. You will add hooks here to call `chatSessionStore.recordToolInvocationResult(...)` when tool results arrive.
 - `src/renderer/src/lib/useAIStream.ts` (or similar): The React hook that listens to streaming events. You will add code here to call `window.api.addChatMessage(...)` when the user sends a message and when the AI finishes responding.
 
 The development database file is located at `./tmp/db/app.db` (relative to the project root). You can inspect it using the `sqlite3` command-line tool (if installed) to run queries and verify data is being saved correctly.
@@ -105,37 +105,97 @@ We will implement this feature through five milestones. Each milestone builds on
 
 ### Milestone 1: Database Schema and Migration
 
-The goal of this milestone is to define the four new database tables in code and generate a migration file that will create them in the SQLite database. At the end of this milestone, the database will have the new tables but they will be empty, and no code will be using them yet. You will verify success by inspecting the database with the sqlite3 command-line tool to see that the tables exist with the correct columns and indexes.
+The goal of this milestone is to define the five new database tables in code and generate a migration file that will create them in the SQLite database. At the end of this milestone, the database will have the new tables but they will be empty, and no code will be using them yet. You will verify success by inspecting the database with the sqlite3 command-line tool to see that the tables exist with the correct columns and indexes.
 
-Open the file `src/backend/db/schema.ts`. This file currently imports functions from `drizzle-orm/sqlite-core` (like `sqliteTable`, `text`, `integer`) and exports one table definition called `settings`. You will add four new table definitions to this file.
+Open the file `src/backend/db/schema.ts`. This file currently imports helpers from `drizzle-orm/sqlite-core` (such as `sqliteTable`, `text`, `integer`, `index`) and only exports the `settings` table. You will add five new table definitions plus their indexes in this file.
 
-Start with the `chatSessions` table. Define it using the `sqliteTable` function, which takes a table name (a string) and an object describing the columns. Each column is defined by calling a function like `text(columnName)` or `integer(columnName)` followed by constraint methods like `.primaryKey()` or `.notNull()`. For example, the `id` column is a text column that serves as the primary key: `id: text('id').primaryKey()`. The `title` column is required text: `title: text('title').notNull()`. Timestamps are integers: `createdAt: integer('created_at').notNull()`. Note the column names use snake_case in the database (underscores between words) even though the JavaScript property names use camelCase. This is a convention in SQL databases.
+Start with the `chatSessions` table. Define it with `sqliteTable('chat_sessions', { ... })`. Columns to include:
+- `id`: `text('id').primaryKey()`
+- `title`: `text('title').notNull()`
+- `createdAt` / `updatedAt`: `integer('created_at').notNull()` and `integer('updated_at').notNull()`
+- `lastMessageAt`: `integer('last_message_at')`
+- `archivedAt`, `pinnedAt`: nullable integers to support archive/pin features later
+- `providerConfigId`, `modelId`: nullable text
+- `messageCount`: integer with `.default(0).notNull()`
+- `dataSchemaVersion`: integer default 1, not null
+- `summary`: nullable text (will store JSON-encoded summary payloads)
+- `summaryUpdatedAt`: nullable integer
+- `color`: nullable text for UI accents
+- `metadata`: nullable text column that stores a JSON blob with additional per-session preferences
 
-The `chatSessions` table needs the following columns: `id` (text primary key), `title` (text not null), `createdAt` (integer not null), `updatedAt` (integer not null), `providerConfigId` (text, nullable), `modelId` (text, nullable), `dataSchemaVersion` (integer not null, default 1), `messageCount` (integer not null, default 0).
+Next, define `chatMessages`. Each row links to a session and can optionally link to a parent message for regenerations. Required columns:
+- `id`: text primary key
+- `sessionId`: text foreign key referencing `chatSessions.id` with cascade delete
+- `role`: text not null (`'user'`, `'assistant'`, `'system'`, `'tool'`)
+- `state`: text not null with default `'completed'` (other values: `'pending'`, `'streaming'`, `'error'`)
+- `sequence`: integer not null (monotonic ordering per session, independent from createdAt)
+- `createdAt`: integer not null
+- `completedAt`: integer nullable
+- `inputTokens`, `outputTokens`: nullable integers
+- `error`: nullable text (JSON serialized error payload)
+- `parentMessageId`: text nullable referencing `chatMessages.id` with `onDelete: 'set null'`
+- `metadata`: nullable text to store future annotations (citations, attachments, etc.)
+- `deletedAt`: nullable integer for soft-deletes
 
-Next, define the `chatMessages` table. This table has a foreign key relationship to `chatSessions`. The `sessionId` column references the `id` column in `chatSessions`, and when a session is deleted, all its messages should be deleted automatically. You express this with `.references(() => chatSessions.id, { onDelete: 'cascade' })`. The `role` column stores one of three strings: 'user', 'assistant', or 'system'. We store it as plain text, but you can add a comment in the code to document the allowed values. The `error` column is text that stores a JSON string representing any error that occurred during message generation.
+Define the `messageParts` table to hold the fine-grained content rendered by the UI. Columns:
+- `id`: text primary key
+- `messageId`: text not null referencing `chatMessages.id` cascade
+- `sessionId`: text not null referencing `chatSessions.id` cascade
+- `kind`: text not null (`'text'`, `'tool_invocation'`, `'tool_result'`, `'attachment'`, `'metadata'`)
+- `sequence`: integer not null (ordering inside a message)
+- `contentText`: text nullable (human-readable)
+- `contentJson`: text nullable (JSON payload for structured content)
+- `mimeType`: text nullable (for attachments or future multimodal payloads)
+- `sizeBytes`: integer nullable (attachment/file sizes)
+- `toolCallId`: text nullable unique per invocation
+- `toolName`: text nullable
+- `status`: text nullable (pending/success/error/canceled)
+- `errorCode`, `errorMessage`: text nullable
+- `relatedPartId`: text nullable referencing another `messageParts.id` (ties a result to its invocation)
+- `metadata`: text nullable
+- `createdAt`, `updatedAt`: integers not null
 
-The `chatMessages` table columns: `id` (text primary key), `sessionId` (text not null, references chatSessions.id with cascade delete), `role` (text not null), `createdAt` (integer not null), `completedAt` (integer, nullable), `inputTokens` (integer, nullable), `outputTokens` (integer, nullable), `error` (text, nullable, stores JSON), `parentMessageId` (text, nullable, self-referencing chatMessages.id with set null on delete, for future branching support).
+Add the `toolInvocations` table to capture operational data for every tool call. Columns:
+- `id`: text primary key (use `crypto.randomUUID()`)
+- `sessionId`: text not null referencing `chatSessions.id`
+- `messageId`: text not null referencing `chatMessages.id`
+- `invocationPartId`: text not null referencing `messageParts.id`
+- `resultPartId`: text nullable referencing `messageParts.id`
+- `toolCallId`: text not null unique (matches the SDK-provided identifier)
+- `toolName`: text not null
+- `inputJson`: text nullable
+- `outputJson`: text nullable
+- `status`: text not null (`pending`, `running`, `success`, `error`, `canceled`)
+- `errorCode`, `errorMessage`: text nullable
+- `latencyMs`: integer nullable
+- `startedAt`, `completedAt`: integers nullable
+- `createdAt`, `updatedAt`: integers not null
 
-Define the `messageParts` table. This table stores individual parts of messages. Each part has a `type` column that is either 'text' or 'tool_call'. Text parts have a `content` column with the actual text. Tool call parts have `toolCallId`, `toolName`, `toolInput` (JSON string), and `toolInputText` (formatted for display). The table has foreign keys to both `chatMessages` (via `messageId`) and `chatSessions` (via `sessionId`) with cascade deletes.
+Finally, define `sessionSnapshots`. Each row stores a denormalized summary of part of a conversation:
+- `id`: text primary key
+- `sessionId`: text not null referencing `chatSessions.id` cascade
+- `kind`: text not null (`'title'`, `'summary'`, `'memory'`)
+- `contentJson`: text not null (JSON storing summary data)
+- `messageCutoffId`: text not null referencing `chatMessages.id`
+- `tokenCount`: integer not null (tokens represented by the snapshot)
+- `createdAt`: integer not null
+- `updatedAt`: integer not null
 
-The `messageParts` table columns: `id` (text primary key), `messageId` (text not null, references chatMessages.id cascade), `sessionId` (text not null, references chatSessions.id cascade), `type` (text not null), `createdAt` (integer not null), `updatedAt` (integer not null), `content` (text, nullable), `toolCallId` (text, nullable), `toolName` (text, nullable), `toolInput` (text, nullable, JSON string), `toolInputText` (text, nullable), `metadata` (text, nullable, JSON string).
+After defining the tables, create supporting indexes. Required indexes:
+- `chatMessages`: index `(session_id, sequence)` for deterministic ordering and `(session_id, created_at)` for recency queries.
+- `messageParts`: indexes on `(message_id, sequence)`, `(session_id, kind)`, and a unique index on `tool_call_id` where not null.
+- `toolInvocations`: indexes on `tool_name`, `(status, completed_at)`, and `(session_id, created_at)`.
+- `sessionSnapshots`: index on `(session_id, kind)` so we can quickly fetch the latest summary per session.
 
-Define the `toolCallResults` table. Each row stores the outcome of executing one tool. The `partId` column is unique and references `messageParts.id`. The `toolCallId` is also unique and serves as the join key when relating parts to results. The `status` column is either 'success' or 'error'. The `output` column stores the tool's return value as a JSON string.
-
-The `toolCallResults` table columns: `id` (text primary key), `partId` (text not null unique, references messageParts.id cascade), `messageId` (text not null, references chatMessages.id cascade), `sessionId` (text not null, references chatSessions.id cascade), `toolCallId` (text not null unique), `toolName` (text not null), `output` (text, nullable, JSON string), `status` (text not null), `error` (text, nullable), `errorCode` (text, nullable), `startedAt` (integer, nullable), `completedAt` (integer, nullable), `createdAt` (integer not null), `updatedAt` (integer not null).
-
-After defining the tables, define indexes. Indexes speed up queries. We will query messages by session_id frequently (to load all messages in a session), so create an index on `chatMessages.sessionId`. We will also sort messages by creation time, so index `chatMessages.createdAt`. For parts, index `messageId`, `sessionId`, and `toolCallId`. For tool results, index `messageId` and `toolName`. Drizzle provides an `index` function that you call like `index('index_name').on(tableName.columnName)` and export as a separate constant.
-
-Once you have added all four table definitions and the indexes to `src/backend/db/schema.ts`, save the file. Do not modify `src/backend/db/index.ts` or any other files yet.
+Once you have added all five table definitions plus their indexes to `src/backend/db/schema.ts`, save the file. Do not modify `src/backend/db/index.ts` or any other files yet.
 
 Now generate the migration. Open a terminal in the project root directory (the directory containing `package.json`). Run the command `pnpm run drizzle-kit generate`. Drizzle Kit will compare your schema definition to the current database state (which has only the settings table) and generate SQL statements to create the new tables. It will create a new file in `resources/db/migrations/` with a name like `0001_add_chat_tables.sql` containing CREATE TABLE and CREATE INDEX statements. You will see output like "Migration created: 0001_add_chat_tables.sql".
 
 Start the application with `pnpm run dev`. The backend process will initialize the database connection and call `migrate()`, which reads the migration files and applies any that haven't been applied yet. Check the terminal logs for a message like "[backend:db] Applied migration: 0001_add_chat_tables" (the exact format depends on the logging configuration, but you should see confirmation that a migration ran).
 
-Verify the tables were created. If you have the `sqlite3` command-line tool installed, run `sqlite3 ./tmp/db/app.db ".tables"` and you should see: `chat_messages  chat_sessions  message_parts  settings  tool_call_results`. Run `sqlite3 ./tmp/db/app.db ".schema chat_sessions"` and you should see the CREATE TABLE statement with all the columns. If you don't have sqlite3 installed, you can use Drizzle Studio by running `pnpm run drizzle-kit studio`, which opens a web interface where you can browse the database. Alternatively, you can verify in the next milestone by writing code that queries the tables.
+Verify the tables were created. If you have the `sqlite3` command-line tool installed, run `sqlite3 ./tmp/db/app.db ".tables"` and you should see: `chat_messages  chat_sessions  message_parts  session_snapshots  settings  tool_invocations`. Run `sqlite3 ./tmp/db/app.db ".schema chat_sessions"` and you should see the CREATE TABLE statement with all the columns. If you don't have sqlite3 installed, you can use Drizzle Studio by running `pnpm run drizzle-kit studio`, which opens a web interface where you can browse the database. Alternatively, you can verify in the next milestone by writing code that queries the tables.
 
-At the end of this milestone, you have four new empty tables in the database and a migration file checked into the repository. The migration will automatically apply in production builds, so this change is deployment-ready even though no code uses the tables yet.
+At the end of this milestone, you have five new empty tables in the database and a migration file checked into the repository. The migration will automatically apply in production builds, so this change is deployment-ready even though no code uses the tables yet.
 
 ### Milestone 2: ChatSessionStore Service Class
 
@@ -145,22 +205,29 @@ Create a new directory `src/backend/session/` (create the `session` folder insid
 
 At the top of the file, import the necessary dependencies:
 - Import `Database` type from `better-sqlite3` (this is the type of the database connection object).
-- Import the table definitions and Drizzle query functions: `import { chatSessions, chatMessages, messageParts, toolCallResults } from '../db/schema'` and `import { eq, desc, like, and } from 'drizzle-orm'` (these are query builder functions).
-- Import or define the TypeScript interfaces for requests and responses (CreateSessionRequest, AddMessageRequest, ChatSessionWithMessages, etc.). You can define them in this file or in a separate types file like `src/common/chat-types.ts`.
+- Import the table definitions and Drizzle query functions: `import { chatSessions, chatMessages, messageParts, toolInvocations } from '../db/schema'` and `import { eq, desc, like, and } from 'drizzle-orm'` (these are query builder functions).
+- Import or define the TypeScript interfaces for requests and responses (CreateSessionRequest, AddMessageRequest, ChatSessionWithMessages, etc.). You can define them in this file or in a separate types file like `src/common/chat-types.ts`. The `sessionSnapshots` table exists purely for future summarization work and does not need code in this milestone.
 
 Define the class: `export class ChatSessionStore { constructor(private db: Database) {} }`. The `db` parameter is the Drizzle database instance, which will be passed in when the class is instantiated.
 
 Implement the `createSession` method. This method takes a `CreateSessionRequest` (an object with optional `title`, `providerConfigId`, and `modelId` fields) and returns a Promise that resolves to the new session ID (a string). Inside the method, generate a new UUID using `crypto.randomUUID()` (available in Node.js). Get the current time as a Unix timestamp with `Date.now()` (this returns milliseconds since epoch). Insert a row into the `chatSessions` table using Drizzle's insert syntax: `await this.db.insert(chatSessions).values({ id: newId, title: title || 'New Chat', createdAt: now, updatedAt: now, ... })`. Handle errors by wrapping in try/catch and returning an appropriate error object or throwing an exception. Return the new session ID on success.
 
-Implement the `getSession` method. This method takes a session ID string and returns a Promise resolving to a `ChatSessionWithMessages` object (or null if the session doesn't exist). This is the most complex query because you need to join across all four tables. First, fetch the session row: `const session = await this.db.select().from(chatSessions).where(eq(chatSessions.id, sessionId)).get()`. If null, return null immediately. Next, fetch all messages for this session: `const messages = await this.db.select().from(chatMessages).where(eq(chatMessages.sessionId, sessionId)).orderBy(desc(chatMessages.createdAt))`. For each message, fetch its parts: `const parts = await this.db.select().from(messageParts).where(eq(messageParts.messageId, message.id))`. For each part that is a tool_call, fetch the result if it exists: `const result = await this.db.select().from(toolCallResults).where(eq(toolCallResults.toolCallId, part.toolCallId)).get()`. Combine all this data into the nested structure expected by the UI (ChatMessageWithParts arrays containing TextPart and ToolCallPart objects). Convert all Unix integer timestamps to ISO 8601 strings using a helper function (create a private method `unixToISO(timestamp: number): string` that calls `new Date(timestamp).toISOString()`). Parse any JSON string fields (like `toolInput`, `output`, `error`) into objects. Return the complete session object.
+Implement the `getSession` method. This method takes a session ID string and returns a Promise resolving to a `ChatSessionWithMessages` object (or null if the session doesn't exist). First, fetch the session row: `const session = await this.db.select().from(chatSessions).where(eq(chatSessions.id, sessionId)).get()`. If null, return null immediately. Next, fetch all messages for this session ordered by `sequence` ascending (fall back to `createdAt` if sequences are equal). For each message, fetch its parts ordered by `sequence`. When a part has a `toolCallId`, look up the corresponding row in `toolInvocations` to obtain status, timestamps, and structured output; merge that into the part so the renderer can show progress or failures without issuing new IPC calls. Convert Unix integer timestamps to ISO 8601 strings at the edge (create helper methods `unixToISO` and `isoToUnix`). Parse JSON string fields (`contentJson`, `metadata`, `inputJson`, `outputJson`, `error`) into JavaScript objects before returning the response.
 
 Implement the `listSessions` method. This method takes optional parameters (limit, offset, sortBy) and returns an array of session metadata (not including messages). Query the `chatSessions` table, apply ordering based on the `sortBy` parameter (default to `updatedAt` descending), apply limit and offset if provided, convert timestamps to ISO 8601, and return the array.
 
-Implement the `addMessage` method. This method takes an `AddMessageRequest` containing session ID, role, an array of parts, and optional token counts and error info. It must insert one row into `chatMessages` and one or more rows into `messageParts` in a single transaction to ensure data consistency. Use Drizzle's transaction API: `await this.db.transaction(async (tx) => { ... })`. Inside the transaction, generate a message ID, insert the message row, loop over the parts array and insert each part, and update the session's `messageCount` and `updatedAt` fields. Return the new message ID. If any operation fails, the transaction will automatically roll back.
+Implement the `addMessage` method. This method takes an `AddMessageRequest` containing session ID, role, an array of parts, and optional token counts and error info. It must insert one row into `chatMessages` and one or more rows into `messageParts` inside a single transaction to ensure data consistency. Use Drizzle's transaction API: `await this.db.transaction(async (tx) => { ... })`. Inside the transaction:
+1. Read the current `message_count` for the session and calculate the next `sequence` (e.g., `messageCount + 1`).
+2. Insert the message row with that sequence, timestamps, token counts, and metadata.
+3. Loop over the parts array, assign a `sequence` per part (based on loop index), map the request's discriminated union to the columns described earlier, and insert each row into `messageParts`.
+4. If a part describes a tool invocation, simultaneously insert a row into `toolInvocations` with `status: 'pending'` so that later result updates have a home.
+5. Update the session's `messageCount`, `lastMessageAt`, and `updatedAt` fields.
 
-Implement the `updateToolCallResult` method. This method takes an `UpdateToolCallResultRequest` containing a tool call ID, output, status, and optional error info. It inserts or updates a row in the `toolCallResults` table. First, check if a result already exists for this `toolCallId`. If yes, update it; if no, insert a new row. Set the `completedAt` timestamp to now. Handle JSON serialization of the output field.
+Return the new message ID. If any operation fails, the transaction will automatically roll back.
 
-Implement the `deleteSession` method. This method takes a session ID and deletes the session row. Because foreign keys are configured with CASCADE, this will automatically delete all associated messages, parts, and results. Simply execute `await this.db.delete(chatSessions).where(eq(chatSessions.id, sessionId))`.
+Implement the `recordToolInvocationResult` method. This method takes a `RecordToolInvocationResultRequest` containing a `toolCallId`, `status`, optional `output`, and optional error info. Use the `toolInvocations` table to upsert the lifecycle state: update `status`, `outputJson`, `errorCode`, `errorMessage`, `latencyMs`, `completedAt`, and `updatedAt`. If the invocation does not yet have a `resultPartId`, insert a new `messageParts` row of `kind: 'tool_result'` (or reuse the renderer-provided part data) so the transcript always has a visible result; then update the `toolInvocations` row to point to that part. This keeps UI hydration simple: the renderer just loads message parts and sees both the invocation and result, while analytics can inspect `toolInvocations`.
+
+Implement the `deleteSession` method. This method takes a session ID and deletes the session row. Because foreign keys are configured with CASCADE, this automatically deletes all associated messages, parts, tool invocations, and session snapshots. Simply execute `await this.db.delete(chatSessions).where(eq(chatSessions.id, sessionId))`.
 
 Implement the `updateSession` method for updating session metadata (like title). Execute `await this.db.update(chatSessions).set({ title: newTitle, updatedAt: Date.now() }).where(eq(chatSessions.id, sessionId))`.
 
@@ -173,10 +240,10 @@ Create a test file `src/backend/session/ChatSessionStore.test.ts`. Import the Ch
 Write test cases:
 - Test `createSession`: call the method, verify it returns a UUID, query the database directly to verify the row exists.
 - Test `getSession` with a non-existent ID: verify it returns null.
-- Test `addMessage`: create a session, add a message with text and tool_call parts, call `getSession`, verify the returned object includes the message with both parts.
-- Test `updateToolCallResult`: add a message with a tool call, update the result, call `getSession`, verify the result is attached to the tool call part.
+- Test `addMessage`: create a session, add a message with text and tool_invocation parts, call `getSession`, verify the returned object includes the message with both parts and that `toolInvocations` has a pending row.
+- Test `recordToolInvocationResult`: add a message with a tool invocation, record a result (success and error paths), call `getSession`, verify the invocation now includes status/output metadata and the new `tool_result` part.
 - Test `deleteSession`: create a session, add messages, delete the session, verify the session and messages are gone.
-- Test cascade delete: create a session with messages, parts, and results, delete the session, verify all related rows are deleted from all tables.
+- Test cascade delete: create a session with messages, parts, tool invocations, and snapshots, delete the session, verify all related rows are deleted from every table.
 - Test `listSessions`: create multiple sessions, list them, verify they are sorted correctly.
 
 Run the tests with `pnpm run test:backend`. You should see output like "✓ ChatSessionStore › creates a session and returns UUID" for each passing test. If any tests fail, fix the implementation until all pass.
@@ -202,7 +269,7 @@ Register IPC handlers using `ipcMain.handle`. For each ChatSessionStore method, 
       }
     })
 
-Repeat for `listChatSessions`, `getChatSession`, `updateChatSession`, `deleteChatSession`, `searchChatSessions`, `addChatMessage`, `updateToolCallResult`, `deleteMessagesAfter`, `getLastSessionId`, `setLastSessionId`. Each handler extracts parameters from the `event` and additional arguments, calls the store method, and returns a result object with `{ success: true, data: ... }` or `{ success: false, error: ... }`.
+Repeat for `listChatSessions`, `getChatSession`, `updateChatSession`, `deleteChatSession`, `searchChatSessions`, `addChatMessage`, `recordToolInvocationResult`, `deleteMessagesAfter`, `getLastSessionId`, `setLastSessionId`. Each handler extracts parameters from the `event` and additional arguments, calls the store method, and returns a result object with `{ success: true, data: ... }` or `{ success: false, error: ... }`.
 
 Open `src/preload/index.ts`. This file uses `contextBridge.exposeInMainWorld` to create a `window.api` object that the renderer can access. Inside the exposed API object, add methods that call `ipcRenderer.invoke` for each handler. For example:
 
@@ -215,7 +282,7 @@ Open `src/preload/index.ts`. This file uses `contextBridge.exposeInMainWorld` to
       deleteChatSession: (sessionId: string) => ipcRenderer.invoke('deleteChatSession', sessionId),
       searchChatSessions: (query: string) => ipcRenderer.invoke('searchChatSessions', query),
       addChatMessage: (request: AddMessageRequest) => ipcRenderer.invoke('addChatMessage', request),
-      updateToolCallResult: (request: UpdateToolCallResultRequest) => ipcRenderer.invoke('updateToolCallResult', request),
+      recordToolInvocationResult: (request: RecordToolInvocationResultRequest) => ipcRenderer.invoke('recordToolInvocationResult', request),
       deleteMessagesAfter: (sessionId: string, messageId: string) => ipcRenderer.invoke('deleteMessagesAfter', sessionId, messageId),
       getLastSessionId: () => ipcRenderer.invoke('getLastSessionId'),
       setLastSessionId: (sessionId: string) => ipcRenderer.invoke('setLastSessionId', sessionId)
@@ -244,12 +311,12 @@ Test the `addChatMessage` method from the console:
     await window.api.addChatMessage({
       sessionId: 'f47ac10b-...',
       role: 'user',
-      parts: [{ type: 'text', content: 'Hello world' }]
+      parts: [{ kind: 'text', content: 'Hello world' }]
     })
 
 Verify it returns a message ID. Query the database:
 
-    sqlite3 ./tmp/db/app.db "SELECT role, content FROM chat_messages JOIN message_parts ON chat_messages.id = message_parts.message_id"
+    sqlite3 ./tmp/db/app.db "SELECT role, content_text FROM chat_messages JOIN message_parts ON chat_messages.id = message_parts.message_id"
 
 You should see `user|Hello world`.
 
@@ -300,25 +367,25 @@ At the end of this milestone, you have a fully functional session management UI.
 
 The goal of this milestone is to integrate the database persistence into the message send and receive flow, so that every message the user sends and every response the AI generates is automatically saved to the database. At the end of this milestone, you will be able to have a conversation, restart the app, and see the entire conversation history restored.
 
-This milestone has three parts: saving user messages, saving assistant messages, and saving tool call results.
+This milestone has four parts: saving user messages, saving assistant messages, saving tool invocation results, and hydrating the UI when switching sessions.
 
 **Part 1: Save user messages immediately when sent.**
 
 Find the code in the renderer that handles the user sending a message. This is likely in `src/renderer/src/lib/useAIStream.ts` or a similar file, or in a component that calls the AI streaming function. When the user presses send, the code typically constructs an array of message objects and calls a function like `window.api.streamAIText(messages, options)` to start the AI stream.
 
-Modify this code to first save the user message to the database before starting the stream. Extract the user's input text, construct an `AddMessageRequest` object with `role: 'user'` and `parts: [{ type: 'text', content: userInputText }]`, and call `await window.api.addChatMessage(request)`. This returns a message ID. You can store this ID if needed, but it's not critical. Now the user message is persisted immediately.
+Modify this code to first save the user message to the database before starting the stream. Extract the user's input text, construct an `AddMessageRequest` object with `role: 'user'` and `parts: [{ kind: 'text', content: userInputText }]`, and call `await window.api.addChatMessage(request)`. This returns a message ID. You can store this ID if needed, but it's not critical. Now the user message is persisted immediately.
 
 **Part 2: Save assistant messages when streaming completes.**
 
 During streaming, the backend publishes events like `aiChatChunk` (text chunk), `aiToolCall` (tool invocation), `aiToolResult` (tool output), and `aiChatEnd` (stream complete). The renderer listens to these events and accumulates the data in memory to build up the assistant's message incrementally for display.
 
-Find the code that listens to these events (probably in the same file as Part 1). When the `aiChatEnd` event fires, you know the assistant message is complete. At this point, construct an `AddMessageRequest` with `role: 'assistant'` and a `parts` array containing all the parts that were streamed. For text, create a `{ type: 'text', content: accumulatedText }` part. For each tool call that occurred during streaming, create a `{ type: 'tool_call', toolCallId, toolName, input }` part. Call `await window.api.addChatMessage(request)` to save the complete assistant message.
+Find the code that listens to these events (probably in the same file as Part 1). When the `aiChatEnd` event fires, you know the assistant message is complete. At this point, construct an `AddMessageRequest` with `role: 'assistant'` and a `parts` array containing all the parts that were streamed. For text, create a `{ kind: 'text', content: accumulatedText }` part. For each tool call that occurred during streaming, create a `{ kind: 'tool_invocation', toolCallId, toolName, input }` part. Include any inline `tool_result` parts if the SDK emits them; otherwise the backend will create them when the actual tool output arrives. Call `await window.api.addChatMessage(request)` to save the complete assistant message.
 
 Now when the user sends a message and the AI responds, both messages are saved to the database.
 
-**Part 3: Save tool call results as they arrive.**
+**Part 3: Save tool invocation results as they arrive.**
 
-When the `aiToolResult` event fires during streaming, the backend has finished executing a tool and has the result. The renderer displays this result in the UI (usually by updating a tool call card to show the output). Modify the event handler to also call `await window.api.updateToolCallResult({ toolCallId, output, status: 'success' })` (or status: 'error' if the tool failed). This saves the result to the `tool_call_results` table immediately.
+When the `aiToolResult` event fires during streaming, the backend has finished executing a tool and has the result. The renderer displays this result in the UI (usually by updating a tool call card to show the output). Modify the event handler to also call `await window.api.recordToolInvocationResult({ toolCallId, output, status: 'success' })` (or status: 'error' if the tool failed). This writes to the `tool_invocations` table (updating status, timestamps, and result payload) and ensures the related `tool_result` part becomes visible in the transcript.
 
 **Part 4: Load messages when switching sessions.**
 
@@ -326,15 +393,15 @@ When the user switches sessions (by calling `switchSession` in the SessionManage
 
 Verify the end-to-end flow. Start the app. Create a new session. Send a message like "Hello, how are you?". Wait for the AI to respond. Check the database:
 
-    sqlite3 ./tmp/db/app.db "SELECT role, content FROM chat_messages JOIN message_parts ON chat_messages.id = message_parts.message_id ORDER BY chat_messages.created_at"
+    sqlite3 ./tmp/db/app.db "SELECT role, content_text FROM chat_messages JOIN message_parts ON chat_messages.id = message_parts.message_id ORDER BY chat_messages.created_at"
 
 You should see two rows: one with role 'user' and content 'Hello, how are you?', and one with role 'assistant' and the AI's response text.
 
 Create a second session. Send a different message. Switch back to the first session. You should see the original conversation still there. Close the app completely and reopen it. The app should load the last active session automatically. You should see all the messages from your previous session.
 
-If your AI setup includes MCP tools, send a message that triggers a tool (for example, if you have a file reading tool, ask "What's in README.md?"). After the response completes, check the tool_call_results table:
+If your AI setup includes MCP tools, send a message that triggers a tool (for example, if you have a file reading tool, ask "What's in README.md?"). After the response completes, check the `tool_invocations` table:
 
-    sqlite3 ./tmp/db/app.db "SELECT tool_name, status FROM tool_call_results ORDER BY created_at DESC LIMIT 1"
+    sqlite3 ./tmp/db/app.db "SELECT tool_name, status FROM tool_invocations ORDER BY completed_at DESC, created_at DESC LIMIT 1"
 
 You should see the tool name and status 'success'. Restart the app and verify the tool call displays correctly in the UI with its result.
 
@@ -346,7 +413,7 @@ The following are the exact commands to run and the exact expected outputs for e
 
 **Milestone 1 Steps:**
 
-1. Open `src/backend/db/schema.ts` in your editor. Add the four table definitions as described in the Plan of Work section. Save the file.
+1. Open `src/backend/db/schema.ts` in your editor. Add the five table definitions as described in the Plan of Work section. Save the file.
 
 2. Run the migration generator:
 
@@ -371,11 +438,11 @@ The following are the exact commands to run and the exact expected outputs for e
 
 4. Verify tables exist:
 
-       sqlite3 ./tmp/db/app.db ".tables"
+   sqlite3 ./tmp/db/app.db ".tables"
 
    Expected output:
 
-       chat_messages    chat_sessions    message_parts    settings         tool_call_results
+       chat_messages    chat_sessions    message_parts    session_snapshots    settings    tool_invocations
 
 5. Check schema of one table:
 
@@ -388,10 +455,17 @@ The following are the exact commands to run and the exact expected outputs for e
          `title` text NOT NULL,
          `created_at` integer NOT NULL,
          `updated_at` integer NOT NULL,
-         `provider_config_id` text,
-         `model_id` text,
-         `data_schema_version` integer DEFAULT 1 NOT NULL,
-         `message_count` integer DEFAULT 0 NOT NULL
+        `last_message_at` integer,
+        `provider_config_id` text,
+        `model_id` text,
+        `data_schema_version` integer DEFAULT 1 NOT NULL,
+        `message_count` integer DEFAULT 0 NOT NULL,
+        `archived_at` integer,
+        `pinned_at` integer,
+        `summary` text,
+        `summary_updated_at` integer,
+        `color` text,
+        `metadata` text
        );
 
 **Milestone 2 Steps:**
@@ -413,8 +487,8 @@ The following are the exact commands to run and the exact expected outputs for e
            ✓ creates a session and returns UUID
            ✓ returns null for non-existent session
            ✓ adds message with text part
-           ✓ adds message with tool_call part
-           ✓ updates tool call result
+          ✓ adds message with tool_invocation part
+          ✓ records tool invocation result
            ✓ retrieves session with messages and parts
            ✓ deletes session and cascades
            ✓ lists sessions sorted by updatedAt
@@ -464,7 +538,7 @@ The following are the exact commands to run and the exact expected outputs for e
        await window.api.addChatMessage({
          sessionId: 'f47ac10b-58cc-4372-a567-0e02b2c3d479',
          role: 'user',
-         parts: [{ type: 'text', content: 'Hello' }]
+         parts: [{ kind: 'text', content: 'Hello' }]
        })
 
    Expected output:
@@ -473,7 +547,7 @@ The following are the exact commands to run and the exact expected outputs for e
 
 7. Verify in database:
 
-       sqlite3 ./tmp/db/app.db "SELECT role, content FROM chat_messages JOIN message_parts ON chat_messages.id = message_parts.message_id"
+       sqlite3 ./tmp/db/app.db "SELECT role, content_text FROM chat_messages JOIN message_parts ON chat_messages.id = message_parts.message_id"
 
    Expected output:
 
@@ -510,7 +584,7 @@ The following are the exact commands to run and the exact expected outputs for e
 
 2. Find the code that listens to `aiChatEnd` event. Modify it to call `window.api.addChatMessage` with the complete assistant message.
 
-3. Find the code that listens to `aiToolResult` event. Modify it to call `window.api.updateToolCallResult`.
+3. Find the code that listens to `aiToolResult` event. Modify it to call `window.api.recordToolInvocationResult`.
 
 4. Ensure `switchSession` in SessionManager loads messages and passes them to the chat interface.
 
@@ -522,7 +596,7 @@ The following are the exact commands to run and the exact expected outputs for e
 
 7. Wait for the AI to respond. Once the response is complete, check the database:
 
-       sqlite3 ./tmp/db/app.db "SELECT role, content FROM chat_messages JOIN message_parts ON chat_messages.id = message_parts.message_id ORDER BY chat_messages.created_at"
+       sqlite3 ./tmp/db/app.db "SELECT role, content_text FROM chat_messages JOIN message_parts ON chat_messages.id = message_parts.message_id ORDER BY chat_messages.created_at"
 
    Expected output:
 
@@ -545,7 +619,7 @@ The following are the exact commands to run and the exact expected outputs for e
 
 13. If you have MCP tools configured, send a message that triggers a tool (e.g., "Read the README file"). After the response, check:
 
-        sqlite3 ./tmp/db/app.db "SELECT tool_name, status FROM tool_call_results ORDER BY created_at DESC LIMIT 1"
+        sqlite3 ./tmp/db/app.db "SELECT tool_name, status FROM tool_invocations ORDER BY completed_at DESC LIMIT 1"
 
     Expected output:
 
@@ -565,13 +639,13 @@ After running the migration generation and starting the app, run:
 
     sqlite3 ./tmp/db/app.db ".tables"
 
-You must see `chat_sessions`, `chat_messages`, `message_parts`, and `tool_call_results` in the output.
+You must see `chat_sessions`, `chat_messages`, `message_parts`, `session_snapshots`, and `tool_invocations` in the output.
 
 Run:
 
     sqlite3 ./tmp/db/app.db ".schema chat_messages"
 
-You must see a CREATE TABLE statement with columns `id`, `session_id`, `role`, `created_at`, `completed_at`, `input_tokens`, `output_tokens`, `error`, and `parent_message_id`, and a FOREIGN KEY referencing `chat_sessions(id)` with `ON DELETE CASCADE`.
+You must see a CREATE TABLE statement with columns `id`, `session_id`, `role`, `state`, `sequence`, `created_at`, `completed_at`, `input_tokens`, `output_tokens`, `error`, `metadata`, `parent_message_id`, and `deleted_at`, plus a FOREIGN KEY referencing `chat_sessions(id)` with `ON DELETE CASCADE`.
 
 **Milestone 2 Acceptance:**
 
@@ -617,7 +691,7 @@ You must see a count greater than or equal to the message count (since each mess
 
 If you have MCP tools, send a message that triggers a tool. After completion, run:
 
-    sqlite3 ./tmp/db/app.db "SELECT COUNT(*) FROM tool_call_results WHERE status='success'"
+    sqlite3 ./tmp/db/app.db "SELECT COUNT(*) FROM tool_invocations WHERE status='success'"
 
 You must see at least 1.
 
@@ -667,27 +741,102 @@ File: `resources/db/migrations/0001_create_chat_tables.sql`
       `title` text NOT NULL,
       `created_at` integer NOT NULL,
       `updated_at` integer NOT NULL,
+      `last_message_at` integer,
       `provider_config_id` text,
       `model_id` text,
       `data_schema_version` integer DEFAULT 1 NOT NULL,
-      `message_count` integer DEFAULT 0 NOT NULL
+      `message_count` integer DEFAULT 0 NOT NULL,
+      `archived_at` integer,
+      `pinned_at` integer,
+      `summary` text,
+      `summary_updated_at` integer,
+      `color` text,
+      `metadata` text
     );
     CREATE TABLE `chat_messages` (
       `id` text PRIMARY KEY NOT NULL,
       `session_id` text NOT NULL,
       `role` text NOT NULL,
+      `state` text NOT NULL DEFAULT 'completed',
+      `sequence` integer NOT NULL,
       `created_at` integer NOT NULL,
       `completed_at` integer,
       `input_tokens` integer,
       `output_tokens` integer,
       `error` text,
+      `metadata` text,
       `parent_message_id` text,
+      `deleted_at` integer,
       FOREIGN KEY (`session_id`) REFERENCES `chat_sessions`(`id`) ON DELETE CASCADE,
       FOREIGN KEY (`parent_message_id`) REFERENCES `chat_messages`(`id`) ON DELETE SET NULL
     );
-    CREATE INDEX `idx_chat_messages_session_id` ON `chat_messages` (`session_id`);
-    CREATE INDEX `idx_chat_messages_created_at` ON `chat_messages` (`created_at`);
-    -- ... (similar for message_parts and tool_call_results)
+    CREATE TABLE `message_parts` (
+      `id` text PRIMARY KEY NOT NULL,
+      `message_id` text NOT NULL,
+      `session_id` text NOT NULL,
+      `kind` text NOT NULL,
+      `sequence` integer NOT NULL,
+      `content_text` text,
+      `content_json` text,
+      `mime_type` text,
+      `size_bytes` integer,
+      `tool_call_id` text,
+      `tool_name` text,
+      `status` text,
+      `error_code` text,
+      `error_message` text,
+      `related_part_id` text,
+      `metadata` text,
+      `created_at` integer NOT NULL,
+      `updated_at` integer NOT NULL,
+      FOREIGN KEY (`message_id`) REFERENCES `chat_messages`(`id`) ON DELETE CASCADE,
+      FOREIGN KEY (`session_id`) REFERENCES `chat_sessions`(`id`) ON DELETE CASCADE,
+      FOREIGN KEY (`related_part_id`) REFERENCES `message_parts`(`id`) ON DELETE SET NULL
+    );
+    CREATE TABLE `tool_invocations` (
+      `id` text PRIMARY KEY NOT NULL,
+      `session_id` text NOT NULL,
+      `message_id` text NOT NULL,
+      `invocation_part_id` text NOT NULL,
+      `result_part_id` text,
+      `tool_call_id` text NOT NULL,
+      `tool_name` text NOT NULL,
+      `input_json` text,
+      `output_json` text,
+      `status` text NOT NULL,
+      `error_code` text,
+      `error_message` text,
+      `latency_ms` integer,
+      `started_at` integer,
+      `completed_at` integer,
+      `created_at` integer NOT NULL,
+      `updated_at` integer NOT NULL,
+      FOREIGN KEY (`session_id`) REFERENCES `chat_sessions`(`id`) ON DELETE CASCADE,
+      FOREIGN KEY (`message_id`) REFERENCES `chat_messages`(`id`) ON DELETE CASCADE,
+      FOREIGN KEY (`invocation_part_id`) REFERENCES `message_parts`(`id`) ON DELETE CASCADE,
+      FOREIGN KEY (`result_part_id`) REFERENCES `message_parts`(`id`) ON DELETE SET NULL,
+      UNIQUE (`tool_call_id`)
+    );
+    CREATE TABLE `session_snapshots` (
+      `id` text PRIMARY KEY NOT NULL,
+      `session_id` text NOT NULL,
+      `kind` text NOT NULL,
+      `content_json` text NOT NULL,
+      `message_cutoff_id` text NOT NULL,
+      `token_count` integer NOT NULL,
+      `created_at` integer NOT NULL,
+      `updated_at` integer NOT NULL,
+      FOREIGN KEY (`session_id`) REFERENCES `chat_sessions`(`id`) ON DELETE CASCADE,
+      FOREIGN KEY (`message_cutoff_id`) REFERENCES `chat_messages`(`id`) ON DELETE CASCADE
+    );
+    CREATE INDEX `idx_chat_messages_session_sequence` ON `chat_messages` (`session_id`, `sequence`);
+    CREATE INDEX `idx_chat_messages_session_created` ON `chat_messages` (`session_id`, `created_at`);
+    CREATE INDEX `idx_message_parts_message_sequence` ON `message_parts` (`message_id`, `sequence`);
+    CREATE INDEX `idx_message_parts_session_kind` ON `message_parts` (`session_id`, `kind`);
+    CREATE UNIQUE INDEX `idx_message_parts_tool_call_id` ON `message_parts` (`tool_call_id`) WHERE `tool_call_id` IS NOT NULL;
+    CREATE INDEX `idx_tool_invocations_tool_name` ON `tool_invocations` (`tool_name`);
+    CREATE INDEX `idx_tool_invocations_status_completed` ON `tool_invocations` (`status`, `completed_at`);
+    CREATE INDEX `idx_session_snapshots_kind` ON `session_snapshots` (`session_id`, `kind`);
 
 **Example Test Output (Milestone 2):**
 
@@ -703,8 +852,8 @@ File: `resources/db/migrations/0001_create_chat_tables.sql`
          ✓ creates a session and returns UUID 12ms
          ✓ returns null for non-existent session 3ms
          ✓ adds message with text part 18ms
-         ✓ adds message with tool_call part 15ms
-         ✓ updates tool call result 10ms
+         ✓ adds message with tool_invocation part 15ms
+         ✓ records tool invocation result 10ms
          ✓ retrieves session with messages and parts 25ms
          ✓ deletes session and cascades 8ms
          ✓ lists sessions sorted by updatedAt 14ms
@@ -743,17 +892,17 @@ In the renderer DevTools console:
 
 **Example Database Query (Milestone 5):**
 
-    $ sqlite3 ./tmp/db/app.db "SELECT role, type, content, tool_name FROM chat_messages JOIN message_parts ON chat_messages.id = message_parts.message_id ORDER BY chat_messages.created_at"
+    $ sqlite3 ./tmp/db/app.db "SELECT role, kind, content_text, tool_name FROM chat_messages JOIN message_parts ON chat_messages.id = message_parts.message_id ORDER BY chat_messages.created_at"
 
     user|text|Hello, can you help me?|
     assistant|text|Of course! What do you need help with?|
     user|text|Read the README file|
-    assistant|tool_call||filesystem_read
+    assistant|tool_invocation||filesystem_read
     assistant|text|The README contains: ...|
 
 **Example Tool Result Query (Milestone 5):**
 
-    $ sqlite3 ./tmp/db/app.db "SELECT tool_name, status, substr(output, 1, 50) FROM tool_call_results ORDER BY created_at DESC LIMIT 3"
+    $ sqlite3 ./tmp/db/app.db "SELECT tool_name, status, substr(output_json, 1, 50) FROM tool_invocations ORDER BY completed_at DESC LIMIT 3"
 
     filesystem_read|success|{"content":"# Project Title\n\nThis is a sample RE
     web_search|success|{"results":[{"title":"Example","url":"https://ex
@@ -772,54 +921,85 @@ These represent the raw data as stored in the database, with Unix integer timest
     export interface ChatSessionRow {
       id: string
       title: string
-      createdAt: number  // Unix milliseconds
-      updatedAt: number  // Unix milliseconds
+      createdAt: number
+      updatedAt: number
+      lastMessageAt: number | null
       providerConfigId: string | null
       modelId: string | null
       dataSchemaVersion: number
       messageCount: number
+      archivedAt: number | null
+      pinnedAt: number | null
+      summary: string | null
+      summaryUpdatedAt: number | null
+      color: string | null
+      metadata: string | null
     }
 
     export interface ChatMessageRow {
       id: string
       sessionId: string
-      role: 'user' | 'assistant' | 'system'
+      role: 'user' | 'assistant' | 'system' | 'tool'
+      state: 'pending' | 'streaming' | 'completed' | 'error'
+      sequence: number
       createdAt: number
       completedAt: number | null
       inputTokens: number | null
       outputTokens: number | null
-      error: string | null  // JSON string
+      error: string | null      // JSON string
+      metadata: string | null   // JSON string
       parentMessageId: string | null
+      deletedAt: number | null
     }
 
     export interface MessagePartRow {
       id: string
       messageId: string
       sessionId: string
-      type: 'text' | 'tool_call'
-      createdAt: number
-      updatedAt: number
-      content: string | null
+      kind: 'text' | 'tool_invocation' | 'tool_result' | 'attachment' | 'metadata'
+      sequence: number
+      contentText: string | null
+      contentJson: string | null
+      mimeType: string | null
+      sizeBytes: number | null
       toolCallId: string | null
       toolName: string | null
-      toolInput: string | null  // JSON string
-      toolInputText: string | null
-      metadata: string | null  // JSON string
+      status: 'pending' | 'running' | 'success' | 'error' | 'canceled' | null
+      errorCode: string | null
+      errorMessage: string | null
+      relatedPartId: string | null
+      metadata: string | null    // JSON string
+      createdAt: number
+      updatedAt: number
     }
 
-    export interface ToolCallResultRow {
+    export interface ToolInvocationRow {
       id: string
-      partId: string
-      messageId: string
       sessionId: string
+      messageId: string
+      invocationPartId: string
+      resultPartId: string | null
       toolCallId: string
       toolName: string
-      output: string | null  // JSON string
-      status: 'success' | 'error'
-      error: string | null
+      inputJson: string | null
+      outputJson: string | null
+      status: 'pending' | 'running' | 'success' | 'error' | 'canceled'
       errorCode: string | null
+      errorMessage: string | null
+      latencyMs: number | null
       startedAt: number | null
       completedAt: number | null
+      createdAt: number
+      updatedAt: number
+    }
+
+    export interface SessionSnapshotRow {
+      id: string
+      sessionId: string
+      kind: 'title' | 'summary' | 'memory'
+      contentJson: string
+      messageCutoffId: string
+      tokenCount: number
       createdAt: number
       updatedAt: number
     }
@@ -829,21 +1009,29 @@ These represent the raw data as stored in the database, with Unix integer timest
     export interface ChatSessionWithMessages {
       id: string
       title: string
-      createdAt: string  // ISO 8601
-      updatedAt: string  // ISO 8601
-      providerConfigId?: string
-      modelId?: string
+      createdAt: string
+      updatedAt: string
+      lastMessageAt?: string
+      providerConfigId?: string | null
+      modelId?: string | null
       dataSchemaVersion: number
       messageCount: number
+      pinnedAt?: string | null
+      archivedAt?: string | null
+      summary?: unknown
+      color?: string | null
+      metadata?: unknown
       messages: ChatMessageWithParts[]
     }
 
     export interface ChatMessageWithParts {
       id: string
       sessionId: string
-      role: 'user' | 'assistant' | 'system'
-      createdAt: string  // ISO 8601
-      completedAt?: string  // ISO 8601
+      role: 'user' | 'assistant' | 'system' | 'tool'
+      state: 'pending' | 'streaming' | 'completed' | 'error'
+      sequence: number
+      createdAt: string
+      completedAt?: string
       inputTokens?: number
       outputTokens?: number
       error?: {
@@ -851,31 +1039,63 @@ These represent the raw data as stored in the database, with Unix integer timest
         message: string
         details?: unknown
       }
-      parts: (TextPart | ToolCallPart)[]
+      metadata?: unknown
+      parts: MessagePart[]
     }
+
+    export type MessagePart =
+      | TextPart
+      | ToolInvocationPart
+      | ToolResultPart
+      | AttachmentPart
+      | MetadataPart
 
     export interface TextPart {
-      type: 'text'
+      kind: 'text'
       id: string
       content: string
-      createdAt: string  // ISO 8601
+      createdAt: string
+      metadata?: unknown
     }
 
-    export interface ToolCallPart {
-      type: 'tool_call'
+    export interface ToolInvocationPart {
+      kind: 'tool_invocation'
       id: string
       toolCallId: string
       toolName: string
-      input: unknown  // Parsed from JSON
-      inputText: string
-      status: 'pending' | 'success' | 'error'
-      result?: {
-        output?: unknown  // Parsed from JSON
-        error?: string
-        errorCode?: string
-      }
-      startedAt?: string  // ISO 8601
-      completedAt?: string  // ISO 8601
+      input: unknown
+      inputText?: string
+      status: 'pending' | 'running' | 'success' | 'error' | 'canceled'
+      startedAt?: string
+      metadata?: unknown
+    }
+
+    export interface ToolResultPart {
+      kind: 'tool_result'
+      id: string
+      relatedToolCallId: string
+      output?: unknown
+      outputText?: string
+      errorCode?: string
+      errorMessage?: string
+      completedAt?: string
+      metadata?: unknown
+    }
+
+    export interface AttachmentPart {
+      kind: 'attachment'
+      id: string
+      mimeType: string
+      sizeBytes?: number
+      contentUrl?: string
+      metadata?: unknown
+    }
+
+    export interface MetadataPart {
+      kind: 'metadata'
+      id: string
+      content: unknown
+      metadata?: unknown
     }
 
 **Request Interfaces (Passed from Renderer to Backend):**
@@ -884,11 +1104,12 @@ These represent the raw data as stored in the database, with Unix integer timest
       title?: string
       providerConfigId?: string
       modelId?: string
+      color?: string
     }
 
     export interface AddMessageRequest {
       sessionId: string
-      role: 'user' | 'assistant' | 'system'
+      role: 'user' | 'assistant' | 'system' | 'tool'
       parts: AddMessagePartRequest[]
       inputTokens?: number
       outputTokens?: number
@@ -897,30 +1118,58 @@ These represent the raw data as stored in the database, with Unix integer timest
         message: string
         details?: unknown
       }
+      metadata?: unknown
     }
 
-    export interface AddMessagePartRequest {
-      type: 'text' | 'tool_call'
-      // For text:
-      content?: string
-      // For tool_call:
-      toolCallId?: string
-      toolName?: string
-      input?: unknown  // Will be JSON.stringify'd before storage
-    }
+    export type AddMessagePartRequest =
+      | {
+          kind: 'text'
+          content: string
+          metadata?: unknown
+        }
+      | {
+          kind: 'tool_invocation'
+          toolCallId: string
+          toolName: string
+          input: unknown
+          inputText?: string
+          metadata?: unknown
+        }
+      | {
+          kind: 'attachment'
+          mimeType: string
+          sizeBytes?: number
+          contentJson?: unknown
+          metadata?: unknown
+        }
+      | {
+          kind: 'metadata'
+          content: unknown
+        }
+      | {
+          kind: 'tool_result'
+          toolCallId: string
+          output?: unknown
+          outputText?: string
+          status?: 'success' | 'error' | 'canceled'
+          metadata?: unknown
+        }
 
-    export interface UpdateToolCallResultRequest {
+    export interface RecordToolInvocationResultRequest {
       toolCallId: string
-      output?: unknown  // Will be JSON.stringify'd
-      status: 'success' | 'error'
-      error?: string
+      status: 'success' | 'error' | 'canceled'
+      output?: unknown
+      outputText?: string
       errorCode?: string
+      errorMessage?: string
+      latencyMs?: number
     }
 
     export interface ListSessionsOptions {
       limit?: number
       offset?: number
       sortBy?: 'updatedAt' | 'createdAt' | 'title'
+      includeArchived?: boolean
     }
 
 **ChatSessionStore Class Signature:**
@@ -928,7 +1177,7 @@ These represent the raw data as stored in the database, with Unix integer timest
 In `src/backend/session/ChatSessionStore.ts`:
 
     import { Database } from 'better-sqlite3'
-    import { chatSessions, chatMessages, messageParts, toolCallResults } from '../db/schema'
+    import { chatSessions, chatMessages, messageParts, toolInvocations } from '../db/schema'
     import { eq, desc, like, and, sql } from 'drizzle-orm'
 
     export class ChatSessionStore {
@@ -962,8 +1211,8 @@ In `src/backend/session/ChatSessionStore.ts`:
         // Adds message with parts in a transaction, returns message ID
       }
 
-      async updateToolCallResult(request: UpdateToolCallResultRequest): Promise<void> {
-        // Inserts or updates a tool call result
+      async recordToolInvocationResult(request: RecordToolInvocationResultRequest): Promise<void> {
+        // Updates tool_invocations table and creates tool_result parts as needed
       }
 
       async deleteMessagesAfter(sessionId: string, messageId: string): Promise<void> {
@@ -1030,8 +1279,8 @@ In `src/backend/session/ChatSessionStore.ts`:
       return wrapResult(() => chatSessionStore.addMessage(request))
     })
 
-    ipcMain.handle('updateToolCallResult', async (event, request: UpdateToolCallResultRequest) => {
-      return wrapResult(() => chatSessionStore.updateToolCallResult(request))
+    ipcMain.handle('recordToolInvocationResult', async (event, request: RecordToolInvocationResultRequest) => {
+      return wrapResult(() => chatSessionStore.recordToolInvocationResult(request))
     })
 
     ipcMain.handle('deleteMessagesAfter', async (event, sessionId: string, messageId: string) => {
@@ -1063,7 +1312,7 @@ In `src/backend/session/ChatSessionStore.ts`:
 
       // Message operations
       addChatMessage: (request: AddMessageRequest) => ipcRenderer.invoke('addChatMessage', request),
-      updateToolCallResult: (request: UpdateToolCallResultRequest) => ipcRenderer.invoke('updateToolCallResult', request),
+      recordToolInvocationResult: (request: RecordToolInvocationResultRequest) => ipcRenderer.invoke('recordToolInvocationResult', request),
       deleteMessagesAfter: (sessionId: string, messageId: string) => ipcRenderer.invoke('deleteMessagesAfter', sessionId, messageId),
 
       // Session state
@@ -1181,3 +1430,7 @@ In `src/backend/session/ChatSessionStore.ts`:
     }
 
 This completes the interface specifications. Follow the milestones in order, implementing the interfaces as described, and testing at each step. Each milestone builds on the previous, and you can verify correctness by running the commands and checks listed in the Concrete Steps and Validation sections.
+
+---
+
+Revision 2025-11-13: Expanded the persistence schema to include tool_invocations, typed message parts, and session_snapshots, and renamed the IPC/request surface so future features (summaries, attachments, richer tool telemetry) can land without reworking the database.
