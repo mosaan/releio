@@ -4,15 +4,21 @@ import { ReactNode } from 'react'
 import { logger } from '@renderer/lib/logger'
 import { streamText } from '@renderer/lib/ai'
 import type { AIModelSelection } from '@common/types'
+import type { AddMessageRequest } from '@common/chat-types'
+import { isOk } from '@common/result'
 
 interface AIRuntimeProviderProps {
   children: ReactNode
   modelSelection: AIModelSelection | null
+  chatSessionId?: string | null
 }
 
-export function AIRuntimeProvider({ children, modelSelection }: AIRuntimeProviderProps): React.JSX.Element {
-  // Create adapter with modelSelection closure
-  const createAIModelAdapter = (currentSelection: AIModelSelection | null): ChatModelAdapter => ({
+export function AIRuntimeProvider({ children, modelSelection, chatSessionId }: AIRuntimeProviderProps): React.JSX.Element {
+  // Create adapter with modelSelection and chatSessionId closure
+  const createAIModelAdapter = (
+    currentSelection: AIModelSelection | null,
+    sessionId: string | null | undefined
+  ): ChatModelAdapter => ({
     async *run({ messages, abortSignal }) {
       // Convert Assistant-ui messages to AIMessage format
       const formattedMessages = messages.map((message: ThreadMessage) => ({
@@ -23,11 +29,33 @@ export function AIRuntimeProvider({ children, modelSelection }: AIRuntimeProvide
           .join('')
       }))
 
+      // Save user message to database before streaming (last message is the new user message)
+      if (sessionId && formattedMessages.length > 0) {
+        const lastMessage = formattedMessages[formattedMessages.length - 1]
+        if (lastMessage.role === 'user' && lastMessage.content) {
+          try {
+            const messageRequest: AddMessageRequest = {
+              sessionId,
+              role: 'user',
+              parts: [{ kind: 'text', content: lastMessage.content }]
+            }
+            const result = await window.backend.addChatMessage(messageRequest)
+            if (isOk(result)) {
+              logger.info(`[DB] User message saved: ${result.value}`)
+            } else {
+              logger.error('[DB] Failed to save user message:', result.error)
+            }
+          } catch (error) {
+            logger.error('[DB] Error saving user message:', error)
+          }
+        }
+      }
+
       const selectionInfo = currentSelection
         ? `${currentSelection.providerConfigId}:${currentSelection.modelId}`
         : 'default'
       logger.info(`Starting AI stream with ${formattedMessages.length} messages, selection: ${selectionInfo}`)
-      const stream = await streamText(formattedMessages, abortSignal, currentSelection)
+      const stream = await streamText(formattedMessages, abortSignal, currentSelection, sessionId)
 
       const textChunks: string[] = []
       const contentParts: any[] = []
@@ -85,7 +113,7 @@ export function AIRuntimeProvider({ children, modelSelection }: AIRuntimeProvide
     }
   })
 
-  const runtime = useLocalRuntime(createAIModelAdapter(modelSelection))
+  const runtime = useLocalRuntime(createAIModelAdapter(modelSelection, chatSessionId))
 
   return <AssistantRuntimeProvider runtime={runtime}>{children}</AssistantRuntimeProvider>
 }

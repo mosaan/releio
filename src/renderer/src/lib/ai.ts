@@ -10,10 +10,14 @@ export type StreamChunk =
 export async function streamText(
   messages: AIMessage[],
   abortSignal: AbortSignal,
-  modelSelection: AIModelSelection | null = null
+  modelSelection: AIModelSelection | null = null,
+  chatSessionId?: string | null
 ): Promise<AsyncGenerator<StreamChunk, void, unknown>> {
-  const options = modelSelection ? { modelSelection } : undefined
-  const result = await window.backend.streamAIText(messages, options)
+  const options = {
+    ...(modelSelection ? { modelSelection } : {}),
+    ...(chatSessionId ? { chatSessionId } : {})
+  }
+  const result = await window.backend.streamAIText(messages, Object.keys(options).length > 0 ? options : undefined)
 
   if (isOk(result)) {
     const sessionId = result.value

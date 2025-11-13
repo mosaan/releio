@@ -145,7 +145,10 @@ export function ChatPanel({ onSettings }: ChatPanelProps): React.JSX.Element {
             )}
             <div className="flex-1 overflow-hidden">
               {modelSelection ? (
-                <AIRuntimeProvider modelSelection={modelSelection}>
+                <AIRuntimeProvider
+                  modelSelection={modelSelection}
+                  chatSessionId={currentSession?.id}
+                >
                   <Thread />
                 </AIRuntimeProvider>
               ) : (
