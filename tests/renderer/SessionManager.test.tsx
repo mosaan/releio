@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { userEvent } from '@testing-library/user-event'
 import { SessionManagerProvider, useSessionManager } from '@renderer/contexts/SessionManager'
-import { ok, err } from '@common/result'
+import { ok } from '@common/result'
 import type { ChatSessionRow, ChatSessionWithMessages } from '@common/chat-types'
 
 describe('SessionManager Context', () => {

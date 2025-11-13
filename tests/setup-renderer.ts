@@ -1,7 +1,7 @@
 // Setup file for renderer tests
 // This file runs before all renderer tests
 import '@testing-library/jest-dom'
-import { expect, afterEach, vi } from 'vitest'
+import { afterEach, vi } from 'vitest'
 import { cleanup } from '@testing-library/react'
 
 // Mock electron-log to avoid window.addEventListener issues in happy-dom
