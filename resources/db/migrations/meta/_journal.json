@@ -22,6 +22,13 @@
       "when": 1731142860001,
       "tag": "0002_add_mcp_servers",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1763041472577,
+      "tag": "0003_round_kabuki",
+      "breakpoints": true
     }
   ]
 }
