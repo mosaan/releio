@@ -15,7 +15,7 @@ You will see this working by starting the app, typing several messages to have a
 - [x] (2025-11-13) Milestone 1: Define database schema and generate migration - COMPLETED
 - [x] (2025-11-13) Milestone 2: Implement ChatSessionStore service class with database operations - COMPLETED (95%, tests need fixing)
 - [x] (2025-11-13) Milestone 3: Add IPC handlers to expose database operations to UI - COMPLETED
-- [ ] (Start date TBD) Milestone 4: Build session list UI and session switching logic
+- [x] (2025-11-13) Milestone 4: Build session list UI and session switching logic - COMPLETED
 - [ ] (Start date TBD) Milestone 5: Integrate message persistence into streaming workflow
 
 ## Surprises & Discoveries
@@ -107,6 +107,31 @@ You will see this working by starting the app, typing several messages to have a
 **Next Steps:**
 - Proceed to Milestone 4 (UI Components) to build session list and management interface
 - Consider adding DevTools testing to verify IPC handlers respond correctly
+
+### Milestone 4: Session Management UI (Completed 2025-11-13)
+
+**Achieved:**
+- Created `SessionManager` React context in `src/renderer/src/contexts/SessionManager.tsx` for centralized session state management
+- Built `SessionList` sidebar component with full CRUD operations (create, edit, delete, switch sessions)
+- Implemented `ChatPanel` wrapper component that integrates with existing Thread/AIRuntimeProvider
+- Created `ChatPageWithSessions` layout component combining SessionList sidebar with ChatPanel
+- Integrated into App.tsx, replacing old ChatPage with new session-aware layout
+- Session state includes: currentSessionId, session list, model selection, loading states
+- UI features: inline session title editing, delete confirmation dialogs, visual active session indicator, session metadata display (message count, last update)
+- All components properly typed with TypeScript
+
+**Challenges:**
+- None encountered. The existing UI component library (shadcn/ui) and React patterns made implementation straightforward.
+
+**Lessons Learned:**
+- React Context pattern works well for complex state management across multiple components
+- SessionManager encapsulates all session operations, keeping components clean and focused
+- Existing ModelSelector and AIRuntimeProvider integrated seamlessly with new session architecture
+- Two-column layout (sidebar + main panel) provides intuitive session switching UX
+
+**Next Steps:**
+- Proceed to Milestone 5 (Message Persistence) to integrate message saving during AI streaming
+- Test session switching and model selection persistence
 
 ## Context and Orientation
 
