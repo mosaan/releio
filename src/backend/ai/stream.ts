@@ -4,6 +4,9 @@ import { createModel } from './factory'
 import type { AIMessage, AIConfig, AppEvent } from '@common/types'
 import { EventType } from '@common/types'
 import type { StreamSession } from './stream-session-store'
+import { ChatSessionStore } from '../session/ChatSessionStore'
+import { db } from '../db'
+import type { AddMessageRequest, RecordToolInvocationResultRequest } from '@common/chat-types'
 
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && (error.message === 'AbortError' || error.name === 'AbortError')
@@ -17,6 +20,13 @@ export async function streamSessionText(
   cb: () => void,
   tools?: Record<string, any>
 ): Promise<void> {
+  // Initialize ChatSessionStore if we have a chat session ID
+  const chatSessionStore = session.chatSessionId ? new ChatSessionStore(db) : null
+
+  // Accumulate message parts for persistence
+  const textChunks: string[] = []
+  const toolCalls: Array<{ toolCallId: string; toolName: string; input: unknown }> = []
+
   try {
     const model = await createModel(config)
 
@@ -66,6 +76,8 @@ export async function streamSessionText(
       // Handle different chunk types
       switch (chunk.type) {
         case 'text-delta':
+          // Accumulate text for persistence
+          textChunks.push(chunk.text)
           // Send text chunks to renderer
           publishEvent('aiChatChunk', {
             type: EventType.Message,
@@ -74,6 +86,12 @@ export async function streamSessionText(
           break
 
         case 'tool-call':
+          // Accumulate tool call for persistence
+          toolCalls.push({
+            toolCallId: chunk.toolCallId,
+            toolName: chunk.toolName,
+            input: chunk.input
+          })
           // Log tool call
           logger.info(`[MCP] Tool called: ${chunk.toolName}`, {
             toolCallId: chunk.toolCallId,
@@ -107,6 +125,20 @@ export async function streamSessionText(
               output: chunk.output
             }
           })
+          // Save tool invocation result to database
+          if (chatSessionStore && session.chatSessionId) {
+            try {
+              const toolResultRequest: RecordToolInvocationResultRequest = {
+                toolCallId: chunk.toolCallId,
+                status: 'success',
+                output: chunk.output
+              }
+              await chatSessionStore.recordToolInvocationResult(toolResultRequest)
+              logger.info(`[DB] Tool result saved: ${chunk.toolName} (${chunk.toolCallId})`)
+            } catch (error) {
+              logger.error(`[DB] Failed to save tool result: ${chunk.toolName}`, error)
+            }
+          }
           break
 
         case 'finish':
@@ -126,6 +158,46 @@ export async function streamSessionText(
     // Signal end of stream if not aborted
     if (!session.abortSignal.aborted) {
       publishEvent('aiChatEnd', { type: EventType.Message, payload: { sessionId: session.id } })
+
+      // Save assistant message to database
+      if (chatSessionStore && session.chatSessionId) {
+        try {
+          const parts: AddMessageRequest['parts'] = []
+
+          // Add text part if there's any text
+          const fullText = textChunks.join('')
+          if (fullText) {
+            parts.push({
+              kind: 'text',
+              content: fullText
+            })
+          }
+
+          // Add tool invocation parts
+          for (const toolCall of toolCalls) {
+            parts.push({
+              kind: 'tool_invocation',
+              toolCallId: toolCall.toolCallId,
+              toolName: toolCall.toolName,
+              input: toolCall.input
+            })
+          }
+
+          // Only save if there are parts
+          if (parts.length > 0) {
+            const messageRequest: AddMessageRequest = {
+              sessionId: session.chatSessionId,
+              role: 'assistant',
+              parts
+            }
+            const messageId = await chatSessionStore.addMessage(messageRequest)
+            logger.info(`[DB] Assistant message saved: ${messageId} (${parts.length} parts)`)
+          }
+        } catch (error) {
+          logger.error('[DB] Failed to save assistant message:', error)
+        }
+      }
+
       logger.info(
         `✅ AI response streaming completed successfully with ${config.provider} for session: ${session.id}`
       )

@@ -33,10 +33,11 @@ export async function streamText(
   config: AIConfig,
   messages: AIMessage[],
   publishEvent: (channel: string, event: AppEvent) => void,
-  tools?: Record<string, any>
+  tools?: Record<string, any>,
+  chatSessionId?: string
 ): Promise<string> {
   // Create and store session
-  const session = sessionStore.startSession()
+  const session = sessionStore.startSession(chatSessionId)
 
   // Start streaming directly to session (handles everything in one function)
   streamSessionText(config, messages, session, publishEvent, () => {

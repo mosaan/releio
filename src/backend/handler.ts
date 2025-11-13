@@ -191,7 +191,8 @@ export class Handler {
       (channel: string, event: AppEvent) => {
         this._rendererConnection.publishEvent(channel, event)
       },
-      toolCount > 0 ? mcpTools : undefined
+      toolCount > 0 ? mcpTools : undefined,
+      options?.chatSessionId
     )
     return ok(sessionId)
   }

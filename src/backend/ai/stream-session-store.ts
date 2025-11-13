@@ -3,6 +3,7 @@ export class StreamSession {
 
   constructor(
     public readonly id: string,
+    public readonly chatSessionId: string | undefined,
     public readonly createdAt: Date = new Date()
   ) {}
 
@@ -18,9 +19,9 @@ export class StreamSession {
 export class StreamSessionStore {
   private activeStreamSessions = new Map<string, StreamSession>()
 
-  startSession(): StreamSession {
+  startSession(chatSessionId?: string): StreamSession {
     const sessionId = crypto.randomUUID()
-    const session = new StreamSession(sessionId)
+    const session = new StreamSession(sessionId, chatSessionId)
 
     this.activeStreamSessions.set(sessionId, session)
     return session

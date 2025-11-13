@@ -193,6 +193,7 @@ export interface StreamAIOptions {
   provider?: AIProvider              // Override provider
   model?: string                     // Override model
   parameters?: Record<string, unknown>  // Override parameters
+  chatSessionId?: string             // Chat session ID for message persistence
 }
 
 export interface RendererBackendAPI {
