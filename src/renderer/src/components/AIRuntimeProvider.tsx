@@ -1,13 +1,12 @@
 import { AssistantRuntimeProvider, useLocalRuntime, ExportedMessageRepository } from '@assistant-ui/react'
 import type { ChatModelAdapter, ThreadMessage } from '@assistant-ui/react'
-import { AISDKMessageConverter } from '@assistant-ui/react-ai-sdk'
 import { ReactNode, useEffect } from 'react'
 import { logger } from '@renderer/lib/logger'
 import { streamText } from '@renderer/lib/ai'
 import type { AIModelSelection } from '@common/types'
 import type { AddMessageRequest, ChatMessageWithParts } from '@common/chat-types'
 import { isOk } from '@common/result'
-import { convertMessagesToAISDKFormat } from '@renderer/lib/message-converter'
+import { convertMessagesToThreadFormat } from '@renderer/lib/message-converter'
 
 interface AIRuntimeProviderProps {
   children: ReactNode
@@ -124,11 +123,8 @@ export function AIRuntimeProvider({ children, modelSelection, chatSessionId, ini
       logger.info(`[History] Loading ${initialMessages.length} messages into runtime`)
 
       try {
-        // Convert database messages to AI SDK format
-        const aiMessages = convertMessagesToAISDKFormat(initialMessages)
-
-        // Convert AI SDK messages to ThreadMessages
-        const threadMessages = AISDKMessageConverter.toThreadMessages(aiMessages)
+        // Convert database messages directly to ThreadMessage format
+        const threadMessages = convertMessagesToThreadFormat(initialMessages)
 
         // Import messages into runtime
         runtime.threads.main.import(
