@@ -235,166 +235,162 @@
 CREATE TABLE chat_sessions (
   id TEXT PRIMARY KEY,
   title TEXT NOT NULL,
-  createdAt TIMESTAMP NOT NULL,
-  updatedAt TIMESTAMP NOT NULL,
-  
-  -- メタデータ
-  modelConfigId TEXT,
-  modelName TEXT,
-  providerName TEXT,
-  
+  created_at INTEGER NOT NULL,      -- Unix timestamp (integer)
+  updated_at INTEGER NOT NULL,      -- Unix timestamp (integer)
+
+  -- メタデータ（プロバイダー設定の保持）
+  provider_config_id TEXT,          -- AIProviderConfiguration.id
+  model_id TEXT,                    -- AIModelDefinition.id
+
   -- スキーマバージョン管理
-  dataSchemaVersion INTEGER NOT NULL DEFAULT 1,
-  
+  data_schema_version INTEGER NOT NULL DEFAULT 1,
+
   -- UI キャッシュ
-  messageCount INTEGER NOT NULL DEFAULT 0
+  message_count INTEGER NOT NULL DEFAULT 0
 );
 
 -- 2. メッセージ（role: user | assistant | system）
 CREATE TABLE chat_messages (
   id TEXT PRIMARY KEY,
-  sessionId TEXT NOT NULL,
-  
+  session_id TEXT NOT NULL,
+
   -- メッセージ属性
   role TEXT NOT NULL,              -- 'user' | 'assistant' | 'system'
-  createdAt TIMESTAMP NOT NULL,
-  completedAt TIMESTAMP,           -- assistant の streaming 完了時刻
-  
+  created_at INTEGER NOT NULL,     -- Unix timestamp (integer)
+  completed_at INTEGER,            -- assistant の streaming 完了時刻 (Unix timestamp)
+
   -- トークン使用量
-  inputTokens INTEGER,
-  outputTokens INTEGER,
-  
+  input_tokens INTEGER,
+  output_tokens INTEGER,
+
   -- エラー情報
   error TEXT,                      -- JSON: { name, message, details }
-  
-  -- メッセージ分岐対応
-  parentMessageId TEXT,
-  
-  FOREIGN KEY (sessionId) REFERENCES chat_sessions(id) ON DELETE CASCADE,
-  FOREIGN KEY (parentMessageId) REFERENCES chat_messages(id) ON DELETE SET NULL
+
+  -- メッセージ分岐対応（将来拡張用）
+  parent_message_id TEXT,
+
+  FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE,
+  FOREIGN KEY (parent_message_id) REFERENCES chat_messages(id) ON DELETE SET NULL
 );
 
 -- 3. メッセージパート（text | tool_call）
 CREATE TABLE message_parts (
   id TEXT PRIMARY KEY,
-  messageId TEXT NOT NULL,
-  sessionId TEXT NOT NULL,
-  
+  message_id TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+
   -- パートタイプ
   type TEXT NOT NULL,              -- 'text' | 'tool_call'
-  
+
   -- 時系列
-  createdAt TIMESTAMP NOT NULL,
-  updatedAt TIMESTAMP NOT NULL,
-  
+  created_at INTEGER NOT NULL,     -- Unix timestamp (integer)
+  updated_at INTEGER NOT NULL,     -- Unix timestamp (integer)
+
   -- テキストパート用
   content TEXT,
-  
-  -- ツール呼び出しパート用
-  toolCallId TEXT UNIQUE,
-  toolName TEXT,
-  toolInput TEXT,                  -- JSON
-  toolInputText TEXT,              -- 整形済み表示用
-  toolStatus TEXT,                 -- 'pending' | 'running' | 'completed' | 'error'
-  
+
+  -- ツール呼び出しパート用（メタデータのみ、実行結果は tool_call_results）
+  tool_call_id TEXT UNIQUE,
+  tool_name TEXT,
+  tool_input TEXT,                 -- JSON
+  tool_input_text TEXT,            -- 整形済み表示用
+
   -- その他メタデータ
   metadata TEXT,                   -- JSON
-  
-  FOREIGN KEY (messageId) REFERENCES chat_messages(id) ON DELETE CASCADE,
-  FOREIGN KEY (sessionId) REFERENCES chat_sessions(id) ON DELETE CASCADE
+
+  FOREIGN KEY (message_id) REFERENCES chat_messages(id) ON DELETE CASCADE,
+  FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
 );
 
 -- 4. ツール呼び出し結果
 CREATE TABLE tool_call_results (
   id TEXT PRIMARY KEY,
-  partId TEXT NOT NULL UNIQUE,
-  messageId TEXT NOT NULL,
-  sessionId TEXT NOT NULL,
-  
+  part_id TEXT NOT NULL UNIQUE,
+  message_id TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+
   -- ツール識別情報
-  toolCallId TEXT NOT NULL UNIQUE,
-  toolName TEXT NOT NULL,
-  
+  tool_call_id TEXT NOT NULL UNIQUE,
+  tool_name TEXT NOT NULL,
+
   -- 実行結果
   output TEXT,                     -- JSON
   status TEXT NOT NULL,            -- 'success' | 'error'
   error TEXT,
-  errorCode TEXT,
-  
+  error_code TEXT,
+
   -- 実行時刻
-  startedAt TIMESTAMP,
-  completedAt TIMESTAMP,
-  
+  started_at INTEGER,              -- Unix timestamp (integer)
+  completed_at INTEGER,            -- Unix timestamp (integer)
+
   -- 記録
-  createdAt TIMESTAMP NOT NULL,
-  updatedAt TIMESTAMP NOT NULL,
-  
-  FOREIGN KEY (partId) REFERENCES message_parts(id) ON DELETE CASCADE,
-  FOREIGN KEY (messageId) REFERENCES chat_messages(id) ON DELETE CASCADE,
-  FOREIGN KEY (sessionId) REFERENCES chat_sessions(id) ON DELETE CASCADE
+  created_at INTEGER NOT NULL,     -- Unix timestamp (integer)
+  updated_at INTEGER NOT NULL,     -- Unix timestamp (integer)
+
+  FOREIGN KEY (part_id) REFERENCES message_parts(id) ON DELETE CASCADE,
+  FOREIGN KEY (message_id) REFERENCES chat_messages(id) ON DELETE CASCADE,
+  FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
 );
 
 -- インデックス戦略
-CREATE INDEX idx_chat_messages_sessionId ON chat_messages(sessionId);
-CREATE INDEX idx_chat_messages_createdAt ON chat_messages(createdAt DESC);
-CREATE INDEX idx_message_parts_messageId ON message_parts(messageId);
-CREATE INDEX idx_message_parts_sessionId ON message_parts(sessionId);
-CREATE INDEX idx_message_parts_toolCallId ON message_parts(toolCallId);
-CREATE INDEX idx_tool_call_results_messageId ON tool_call_results(messageId);
-CREATE INDEX idx_tool_call_results_toolName ON tool_call_results(toolName);
+CREATE INDEX idx_chat_messages_session_id ON chat_messages(session_id);
+CREATE INDEX idx_chat_messages_created_at ON chat_messages(created_at DESC);
+CREATE INDEX idx_message_parts_message_id ON message_parts(message_id);
+CREATE INDEX idx_message_parts_session_id ON message_parts(session_id);
+CREATE INDEX idx_message_parts_tool_call_id ON message_parts(tool_call_id);
+CREATE INDEX idx_tool_call_results_message_id ON tool_call_results(message_id);
+CREATE INDEX idx_tool_call_results_tool_name ON tool_call_results(tool_name);
 ```
 
 ### TypeScript インターフェース
 
 ```typescript
-// セッション
+// セッション（DBレコード型）
 interface ChatSessionRow {
   id: string
   title: string
-  createdAt: string              // ISO 8601
-  updatedAt: string              // ISO 8601
-  modelConfigId?: string
-  modelName?: string
-  providerName?: string
+  createdAt: number              // Unix timestamp (integer)
+  updatedAt: number              // Unix timestamp (integer)
+  providerConfigId?: string      // AIProviderConfiguration.id
+  modelId?: string               // AIModelDefinition.id
   dataSchemaVersion: number
   messageCount: number
 }
 
-// メッセージ
+// メッセージ（DBレコード型）
 interface ChatMessageRow {
   id: string
   sessionId: string
   role: 'user' | 'assistant' | 'system'
-  createdAt: string
-  completedAt?: string
+  createdAt: number              // Unix timestamp (integer)
+  completedAt?: number           // Unix timestamp (integer)
   inputTokens?: number
   outputTokens?: number
-  error?: string
+  error?: string                 // JSON string
   parentMessageId?: string
 }
 
-// メッセージパート
+// メッセージパート（DBレコード型）
 interface MessagePartRow {
   id: string
   messageId: string
   sessionId: string
   type: 'text' | 'tool_call'
-  createdAt: string
-  updatedAt: string
-  
+  createdAt: number              // Unix timestamp (integer)
+  updatedAt: number              // Unix timestamp (integer)
+
   // text タイプ
   content?: string
-  
-  // tool_call タイプ
+
+  // tool_call タイプ（メタデータのみ、ステータスは tool_call_results）
   toolCallId?: string
   toolName?: string
-  toolInput?: string              // JSON
+  toolInput?: string             // JSON string
   toolInputText?: string
-  toolStatus?: 'pending' | 'running' | 'completed' | 'error'
-  metadata?: string
+  metadata?: string              // JSON string
 }
 
-// ツール呼び出し結果
+// ツール呼び出し結果（DBレコード型）
 interface ToolCallResultRow {
   id: string
   partId: string
@@ -402,22 +398,22 @@ interface ToolCallResultRow {
   sessionId: string
   toolCallId: string
   toolName: string
-  output?: string                 // JSON
+  output?: string                // JSON string
   status: 'success' | 'error'
   error?: string
   errorCode?: string
-  startedAt?: string
-  completedAt?: string
-  createdAt: string
-  updatedAt: string
+  startedAt?: number             // Unix timestamp (integer)
+  completedAt?: number           // Unix timestamp (integer)
+  createdAt: number              // Unix timestamp (integer)
+  updatedAt: number              // Unix timestamp (integer)
 }
 
-// ドメイン型（UI/API 向け）
+// ドメイン型（UI/API 向け）- Date/ISO 8601 に変換済み
 interface TextPart {
   type: 'text'
   id: string
   content: string
-  createdAt: string
+  createdAt: string              // ISO 8601 (UI表示用)
 }
 
 interface ToolCallPart {
@@ -425,48 +421,70 @@ interface ToolCallPart {
   id: string
   toolCallId: string
   toolName: string
-  input: unknown
+  input: unknown                 // Parsed JSON
   inputText: string
-  status: 'pending' | 'running' | 'completed' | 'error'
+  // ステータスは tool_call_results から取得
+  status: 'pending' | 'success' | 'error'  // pending: 結果なし, success/error: 結果あり
   result?: {
-    output?: unknown
+    output?: unknown             // Parsed JSON
     error?: string
     errorCode?: string
   }
-  startedAt?: string
-  completedAt?: string
+  startedAt?: string             // ISO 8601 (UI表示用)
+  completedAt?: string           // ISO 8601 (UI表示用)
 }
 
 // 複合メッセージ（UI に返すデータ）
-interface ChatMessageWithParts extends ChatMessageRow {
+interface ChatMessageWithParts {
+  id: string
+  sessionId: string
+  role: 'user' | 'assistant' | 'system'
+  createdAt: string              // ISO 8601 (UI表示用)
+  completedAt?: string           // ISO 8601 (UI表示用)
+  inputTokens?: number
+  outputTokens?: number
+  error?: { name: string; message: string; details?: unknown }  // Parsed JSON
+  parentMessageId?: string
   parts: (TextPart | ToolCallPart)[]
 }
 
 // セッション + メッセージ（セッション復元時）
-interface ChatSessionWithMessages extends ChatSessionRow {
+interface ChatSessionWithMessages {
+  id: string
+  title: string
+  createdAt: string              // ISO 8601 (UI表示用)
+  updatedAt: string              // ISO 8601 (UI表示用)
+  providerConfigId?: string
+  modelId?: string
+  dataSchemaVersion: number
+  messageCount: number
   messages: ChatMessageWithParts[]
 }
 
 // API リクエスト型
 interface CreateSessionRequest {
   title?: string
-  modelConfigId?: string
+  providerConfigId?: string      // AIProviderConfiguration.id
+  modelId?: string               // AIModelDefinition.id
 }
 
 interface AddMessageRequest {
   sessionId: string
   role: 'user' | 'assistant' | 'system'
-  content: string
+  parts: AddMessagePartRequest[] // 複数パートを一括で保存
   inputTokens?: number
   outputTokens?: number
+  error?: { name: string; message: string; details?: unknown }
 }
 
-interface AddToolCallPartRequest {
-  messageId: string
-  sessionId: string
-  toolCallId: string
-  toolName: string
-  input: unknown
+interface AddMessagePartRequest {
+  type: 'text' | 'tool_call'
+  // text
+  content?: string
+  // tool_call
+  toolCallId?: string
+  toolName?: string
+  input?: unknown
 }
 
 interface UpdateToolCallResultRequest {
@@ -475,7 +493,6 @@ interface UpdateToolCallResultRequest {
   status: 'success' | 'error'
   error?: string
   errorCode?: string
-  completedAt?: string
 }
 
 interface DeleteMessagesAfterRequest {
@@ -487,6 +504,36 @@ interface DeleteMessagesAfterRequest {
 ### 現状の Renderer（UI）上のメッセージ構造
 
 現在のレンダラーでは `@assistant-ui/react` ライブラリを使用しており、メッセージは以下の構造で扱われています。
+
+**AIMessage（Backend ↔ Renderer の基本メッセージ型）**:
+
+```typescript
+// src/common/types.ts
+export interface AIMessage {
+  role: 'user' | 'assistant' | 'system'
+  content: string  // プレーンテキスト（ツール情報は含まない）
+}
+```
+
+**Backend イベントペイロード（ストリーミング中の通知）**:
+
+```typescript
+// ツール呼び出し開始イベント
+interface ToolCallPayload {
+  sessionId: string
+  toolCallId: string
+  toolName: string
+  input: unknown
+}
+
+// ツール実行結果イベント
+interface ToolResultPayload {
+  sessionId: string
+  toolCallId: string
+  toolName: string
+  output: unknown
+}
+```
 
 **ThreadMessage (assistant-ui のメッセージ型)**:
 
@@ -515,392 +562,58 @@ interface ToolCallPart {
 }
 ```
 
-**Mermaid クラス図**:
-
-```mermaid
-classDiagram
-    class ThreadMessage {
-        +string role
-        +ContentPart[] content
-        +string id
-    }
-    
-    class ContentPart {
-        <<interface>>
-        +string type
-    }
-    
-    class TextPart {
-        +string type = 'text'
-        +string text
-    }
-    
-    class ToolCallPart {
-        +string type = 'tool-call'
-        +string toolCallId
-        +string toolName
-        +unknown args
-        +string argsText
-        +unknown? result
-    }
-    
-    class AIMessage {
-        +'user'|'assistant'|'system' role
-        +string content
-    }
-    
-    class ChatModelAdapter {
-        +run() AsyncGenerator
-    }
-
-    ThreadMessage --> ContentPart
-    ContentPart <|-- TextPart
-    ContentPart <|-- ToolCallPart
-    ChatModelAdapter --> ThreadMessage
-    ChatModelAdapter --> AIMessage
-```
-
 **データフロー**:
 
-1. **Backend → Renderer**: `AIMessage[]` として渡される（role + plain text content）
+1. **Backend → Renderer**: ストリーミング中は `aiChatChunk` イベント（テキスト）と `aiToolCall`/`aiToolResult` イベント（ツール）を個別送信
 2. **Renderer 内流通**: `ThreadMessage[]` に変換（ContentPart[] を含む）
 3. **表示**: TextPart は Markdown として、ToolCallPart は折りたたみ可能なカードとして表示
 
-### 今後の設計方針の検討
-
-現状の UI 上では「テキストとツール呼び出しが 1 つのメッセージ内に複合」という構造ですが、永続化時には以下のいずれかの設計を選択できます：
-
-#### オプション A：Key-Value JSON 内で複合型を保持（現在の設計）
-
-**メリット**:
-- 最小限の変更で既存UI対応
-- JSON スキーマの柔軟性が高い
-- UI の ContentPart 構造そのままに保存
-
-**デメリット**:
-- ツール呼び出しの細粒度検索が困難
-- ツール実行結果の統計集計に手作業が必要
-- メッセージの正規化が不完全
-
-#### オプション B：メッセージとツール呼び出しを正規化（マルチレベルテーブル設計）
-
-本オプションは OPENCODE（コーディングエージェント）の設計を参考に、**マルチレベルの正規化テーブル構造**を採用します。
-セッション → メッセージ → パート（テキスト/ツール呼び出し）という階層構造を明示的に表現します。
-
-**設計の理念**:
+### 採用設計の理念
 
 OPENCODE は Storage を JSON ファイルで実装していますが、本プロジェクトでは同じ論理構造を SQL テーブルで実装します：
-- **Session（セッション）**: メタデータ（title、createdAt、updatedAt、modelConfig など）
-- **Message（メッセージ）**: role（user/assistant/system）、タイムスタンプ、トークン使用量
-- **MessagePart（メッセージ内の部分）**: type（text/tool_call）、それぞれの内容
-- **ToolCallResult（ツール呼び出し結果）**: tool 結果の詳細、error、output
 
-**テーブル構造（詳細版）**:
+### 4テーブル構造の役割分担
 
-```sql
--- 1. チャットセッション（トップレベル）
-CREATE TABLE chat_sessions (
-  id TEXT PRIMARY KEY,
-  title TEXT NOT NULL,
-  createdAt TIMESTAMP NOT NULL,
-  updatedAt TIMESTAMP NOT NULL,
-  
-  -- メタデータ
-  modelConfigId TEXT,           -- 使用した AI モデル設定 ID
-  modelName TEXT,               -- モデル名（スナップショット）
-  providerName TEXT,            -- プロバイダ名（スナップショット）
-  
-  -- スキーマバージョン
-  dataSchemaVersion INTEGER NOT NULL DEFAULT 1,
-  
-  -- メッセージ数キャッシュ（UI 高速化用）
-  messageCount INTEGER NOT NULL DEFAULT 0
-);
+1. **chat_sessions（セッション）**
+   - メタデータ（title、createdAt、updatedAt、providerConfigId、modelId など）
+   - セッション全体の管理
 
--- 2. メッセージ（セッション内の個別メッセージ）
-CREATE TABLE chat_messages (
-  id TEXT PRIMARY KEY,
-  sessionId TEXT NOT NULL,
-  
-  -- メッセージ種別
-  role TEXT NOT NULL,            -- 'user' | 'assistant' | 'system'
-  
-  -- タイムスタンプ
-  createdAt TIMESTAMP NOT NULL,
-  completedAt TIMESTAMP,         -- assistant メッセージが完成した時刻（streaming 完了時刻）
-  
-  -- トークン使用量（AI メッセージ向け）
-  inputTokens INTEGER,
-  outputTokens INTEGER,
-  
-  -- エラー情報（AI メッセージが失敗した場合）
-  error TEXT,                    -- JSON: { name, message, details }
-  
-  -- 親メッセージ ID（会話の分岐に対応）
-  parentMessageId TEXT,
-  
-  FOREIGN KEY (sessionId) REFERENCES chat_sessions(id) ON DELETE CASCADE,
-  FOREIGN KEY (parentMessageId) REFERENCES chat_messages(id) ON DELETE SET NULL
-);
+2. **chat_messages（メッセージ）**
+   - role（user/assistant/system）、タイムスタンプ、トークン使用量
+   - メッセージ単位の管理
 
--- 3. メッセージ部分（テキスト、ツール呼び出しなど）
-CREATE TABLE message_parts (
-  id TEXT PRIMARY KEY,
-  messageId TEXT NOT NULL,
-  sessionId TEXT NOT NULL,
-  
-  -- 部分タイプ
-  type TEXT NOT NULL,            -- 'text' | 'tool_call'
-  
-  -- 共通フィールド
-  createdAt TIMESTAMP NOT NULL,
-  updatedAt TIMESTAMP NOT NULL,
-  
-  -- テキスト部分用
-  content TEXT,                  -- type='text' のときのテキスト内容
-  
-  -- ツール呼び出し部分用
-  toolCallId TEXT,               -- ツール呼び出し ID（一意）
-  toolName TEXT,                 -- ツール名
-  toolInput TEXT,                -- JSON: ツール入力パラメータ
-  toolInputText TEXT,            -- JSON 整形版（表示用）
-  toolStatus TEXT,               -- 'pending' | 'running' | 'completed' | 'error'
-  
-  -- メタデータ
-  metadata TEXT,                 -- JSON: その他メタデータ
-  
-  FOREIGN KEY (messageId) REFERENCES chat_messages(id) ON DELETE CASCADE,
-  FOREIGN KEY (sessionId) REFERENCES chat_sessions(id) ON DELETE CASCADE
-);
+3. **message_parts（メッセージ内の部分）**
+   - type（text/tool_call）ごとの内容
+   - **ツール呼び出しのメタデータ**：tool_call_id, tool_name, tool_input
+   - **重要**：実行ステータスや結果は含まない（INSERT のみ、UPDATE なし）
 
--- 4. ツール呼び出し結果（tool_call パートの結果を別テーブルで管理）
-CREATE TABLE tool_call_results (
-  id TEXT PRIMARY KEY,
-  partId TEXT NOT NULL UNIQUE,   -- message_parts の id を参照
-  messageId TEXT NOT NULL,
-  sessionId TEXT NOT NULL,
-  
-  -- ツール呼び出し情報
-  toolCallId TEXT NOT NULL UNIQUE,
-  toolName TEXT NOT NULL,
-  
-  -- 結果
-  output TEXT,                   -- JSON: ツール出力
-  status TEXT NOT NULL,          -- 'success' | 'error'
-  error TEXT,                    -- エラーメッセージ
-  errorCode TEXT,                -- エラーコード
-  
-  -- タイムスタンプ
-  startedAt TIMESTAMP,           -- ツール実行開始時刻
-  completedAt TIMESTAMP,         -- ツール実行完了時刻
-  
-  createdAt TIMESTAMP NOT NULL,
-  updatedAt TIMESTAMP NOT NULL,
-  
-  FOREIGN KEY (partId) REFERENCES message_parts(id) ON DELETE CASCADE,
-  FOREIGN KEY (messageId) REFERENCES chat_messages(id) ON DELETE CASCADE,
-  FOREIGN KEY (sessionId) REFERENCES chat_sessions(id) ON DELETE CASCADE
-);
+4. **tool_call_results（ツール実行結果）**
+   - **ツール実行の結果**：output, status（success/error）, error
+   - **実行時間**：started_at, completed_at
+   - message_parts とは **1:1 関係**（tool_call_id で紐付け）
+   - **時系列の分離**：ツール呼び出し（即座）と結果（数秒後）は別タイミングで記録
 
--- インデックス
-CREATE INDEX idx_chat_messages_sessionId ON chat_messages(sessionId);
-CREATE INDEX idx_chat_messages_createdAt ON chat_messages(createdAt DESC);
-CREATE INDEX idx_message_parts_messageId ON message_parts(messageId);
-CREATE INDEX idx_message_parts_sessionId ON message_parts(sessionId);
-CREATE INDEX idx_message_parts_toolCallId ON message_parts(toolCallId);
-CREATE INDEX idx_tool_call_results_messageId ON tool_call_results(messageId);
-CREATE INDEX idx_tool_call_results_toolName ON tool_call_results(toolName);
+### テーブル分離の理由
+
+**なぜ message_parts に tool_status を持たせないのか？**
+
+```
+【ストリーミング中の時系列】
+1. aiToolCall イベント → message_parts に INSERT（tool_input のみ）
+2. ツール実行中...（数秒〜数十秒）
+3. aiToolResult イベント → tool_call_results に INSERT（output, status）
 ```
 
-**TypeScript インターフェース（正規化後）**:
+- `message_parts` は **呼び出し時に一度だけ INSERT**（更新不要）
+- `tool_call_results` は **結果が到着したら INSERT**（INSERT のみ、UPDATE 不要）
+- **2つのテーブル = 2つの時点** を明確に分離
 
-```typescript
-// セッション
-interface ChatSessionRow {
-  id: string
-  title: string
-  createdAt: string
-  updatedAt: string
-  modelConfigId?: string
-  modelName?: string
-  providerName?: string
-  dataSchemaVersion: number
-  messageCount: number
-}
-
-// メッセージ
-interface ChatMessageRow {
-  id: string
-  sessionId: string
-  role: 'user' | 'assistant' | 'system'
-  createdAt: string
-  completedAt?: string          // assistant の場合、streaming 完了時刻
-  inputTokens?: number
-  outputTokens?: number
-  error?: string
-  parentMessageId?: string
-}
-
-// メッセージ部分
-interface MessagePartRow {
-  id: string
-  messageId: string
-  sessionId: string
-  type: 'text' | 'tool_call'
-  createdAt: string
-  updatedAt: string
-  
-  // テキスト部分
-  content?: string
-  
-  // ツール呼び出し部分
-  toolCallId?: string
-  toolName?: string
-  toolInput?: string
-  toolInputText?: string
-  toolStatus?: 'pending' | 'running' | 'completed' | 'error'
-  metadata?: string
-}
-
-// ツール呼び出し結果
-interface ToolCallResultRow {
-  id: string
-  partId: string
-  messageId: string
-  sessionId: string
-  toolCallId: string
-  toolName: string
-  output?: string
-  status: 'success' | 'error'
-  error?: string
-  errorCode?: string
-  startedAt?: string
-  completedAt?: string
-  createdAt: string
-  updatedAt: string
-}
-
-// 組み立てられたメッセージ（UI 向け）
-interface ChatMessageWithParts extends ChatMessageRow {
-  parts: (TextPartRow | ToolCallPartRow)[]
-}
-
-interface TextPartRow {
-  type: 'text'
-  id: string
-  content: string
-  createdAt: string
-}
-
-interface ToolCallPartRow {
-  type: 'tool_call'
-  id: string
-  toolCallId: string
-  toolName: string
-  input: unknown
-  inputText: string
-  status: 'pending' | 'running' | 'completed' | 'error'
-  result?: {
-    output?: unknown
-    error?: string
-    errorCode?: string
-  }
-  startedAt?: string
-  completedAt?: string
-}
-```
-
-**データ読み込みフロー（セッション復元時）**:
-
-```typescript
-async function getChatSessionWithMessages(sessionId: string): Promise<ChatSessionWithMessages | null> {
-  // 1. セッション取得
-  const sessionRow = await db.select().from(chatSessions).where(eq(chatSessions.id, sessionId))
-  if (!sessionRow) return null
-
-  // 2. メッセージ一覧取得（作成順）
-  const messageRows = await db.select()
-    .from(chatMessages)
-    .where(eq(chatMessages.sessionId, sessionId))
-    .orderBy(asc(chatMessages.createdAt))
-
-  // 3. 各メッセージにパートを割り当て
-  const messagesWithParts = await Promise.all(
-    messageRows.map(async (msg) => {
-      // パート取得
-      const partRows = await db.select()
-        .from(messageParts)
-        .where(eq(messageParts.messageId, msg.id))
-        .orderBy(asc(messageParts.createdAt))
-
-      // ツール呼び出し結果を取得
-      const parts = await Promise.all(
-        partRows.map(async (part) => {
-          if (part.type === 'text') {
-            return { type: 'text', id: part.id, content: part.content, createdAt: part.createdAt }
-          } else if (part.type === 'tool_call') {
-            const result = await db.select()
-              .from(toolCallResults)
-              .where(eq(toolCallResults.partId, part.id))
-              .limit(1)
-            return {
-              type: 'tool_call',
-              id: part.id,
-              toolCallId: part.toolCallId,
-              toolName: part.toolName,
-              input: JSON.parse(part.toolInput),
-              inputText: part.toolInputText,
-              status: part.toolStatus,
-              result: result[0] ? {
-                output: result[0].output ? JSON.parse(result[0].output) : undefined,
-                error: result[0].error,
-                errorCode: result[0].errorCode,
-              } : undefined,
-              startedAt: result[0]?.startedAt,
-              completedAt: result[0]?.completedAt,
-            }
-          }
-        })
-      )
-
-      return { ...msg, parts }
-    })
-  )
-
-  return {
-    ...sessionRow,
-    messages: messagesWithParts
-  }
-}
-```
-
-**メリット**:
+**正規化テーブル設計のメリット**:
 - ✅ **正規化スキーマ**: 3NF に従い、データ整合性が高い
 - ✅ **効率的なクエリ**: 特定ツール実行の統計、エラーメッセージの集計など SQL で直接実行可能
 - ✅ **段階的な拡張**: 将来「要約メッセージ」や「コンパクション」を追加しやすい
 - ✅ **OPENCODE との親和性**: 同じレベルの階層構造を採用
-- ✅ **部分更新**: ツール結果の追記やメッセージ完了フラグの更新が効率的
-
-**デメリット**:
-- ❌ **複雑性**: 4 テーブル、JOIN が複数必要
-- ❌ **読み込み処理**: セッション全体復元に複数クエリ必要（ただし、インデックスで最適化可能）
-- ❌ **マイグレーション管理**: バージョンアップ時に複数テーブルを管理
-- ❌ **初期実装コスト**: Key-Value より実装量が増加
-
-### 推奨方針
-
-**オプション B（正規化テーブル設計）を採用** する理由：
-
-1. **長期保守性**: 3NF に従う正規化スキーマは保守・拡張しやすい
-2. **OPENCODE との整合性**: 既存の成功事例を踏襲
-3. **将来への投資**: 要約・圧縮機能を後から追加する際、正規化済み設計だと容易
-4. **統計・分析**: ツール実行結果の集計が SQL で直接実行可能
-5. **段階的復元**: UI は「メッセージ一覧」を取得し、必要に応じて「パート」を遅延ロード可能
-
-ただし、実装段階では以下を考慮：
-- インデックス戦略で読み込み性能を確保
-- キャッシュ層（messageCount など）で UI 反応性維持
-- バッチ操作（トランザクション）で整合性保証
+- ✅ **INSERT のみで完結**: UPDATE 不要、データ整合性が保ちやすい
 
 ---
 
@@ -922,19 +635,23 @@ async function getChatSessionWithMessages(sessionId: string): Promise<ChatSessio
 │  - getChatSession()                                 │
 │  - listChatSessions()                               │
 │  - deleteChatSession()                              │
+│  - updateToolCallResult()                           │
 └─────────────────────┬───────────────────────────────┘
                       │
 ┌─────────────────────▼───────────────────────────────┐
 │        ChatSessionStore (Business Logic)            │
-│  - Session CRUD（JSON 読み書き）                    │
-│  - Message 操作（JSON 配列の操作）                  │
+│  - Session CRUD（テーブル操作）                     │
+│  - Message 操作（メッセージ・パート追加）           │
+│  - ツール結果更新                                   │
 │  - タイムスタンプ・メタデータ管理                    │
 └─────────────────────┬───────────────────────────────┘
                       │
 ┌─────────────────────▼───────────────────────────────┐
-│         Database Layer (libsql + Drizzle)           │
-│  - chat_sessions table (Key-Value ストア)           │
-│  - JSON 読み書き・シリアライズ                      │
+│         Database Layer (better-sqlite3 + Drizzle)   │
+│  - chat_sessions table                              │
+│  - chat_messages table                              │
+│  - message_parts table                              │
+│  - tool_call_results table                          │
 └─────────────────────┬───────────────────────────────┘
                       │
            ┌──────────▼──────────┐
@@ -958,28 +675,35 @@ async function getChatSessionWithMessages(sessionId: string): Promise<ChatSessio
 - IPC API エントリーポイント
 - リクエスト検証
 - ChatSessionStore に委譲
+- ストリーミング中のイベント（aiToolCall, aiToolResult）をフックして永続化
 
 #### ChatSessionStore
 
-- Session CRUD 操作（JSON 全体の読み書き）
-- Message 配列操作（追加・削除・編集）
+- Session CRUD 操作（テーブル操作）
+- Message・Part 追加（複数テーブルへの INSERT）
+- ツール結果更新（tool_call_results への INSERT/UPDATE）
 - データベーストランザクション管理
-- JSON のシリアライズ・パース
+- Unix timestamp ↔ ISO 8601 変換
 
 #### Database Layer
 
 - Drizzle ORM スキーマ定義
-- テーブル操作
-- インデックス管理（createdAt, updatedAt, title）
+- テーブル操作（4 テーブル）
+- インデックス管理（session_id, created_at, tool_call_id など）
 
-### データフロー：メッセージ追加
+### データフロー：メッセージ追加（ストリーミング完了時）
 
 ```typescript
-// Renderer
+// Renderer -> Backend IPC
 await backend.addChatMessage({
   sessionId: 'session-123',
-  role: 'user',
-  content: 'Hello'
+  role: 'assistant',
+  parts: [
+    { type: 'text', content: 'Hello! I can help you with that.' },
+    { type: 'tool_call', toolCallId: 'call_abc', toolName: 'filesystem_read', input: { path: 'file.txt' } }
+  ],
+  inputTokens: 120,
+  outputTokens: 45
 })
 
 // Handler
@@ -989,38 +713,49 @@ async addChatMessage(request: AddMessageRequest) {
 
 // ChatSessionStore
 async addMessage(request: AddMessageRequest) {
-  // 1. 現在のセッション読み込み
-  const session = await db.select()
-    .from(chatSessions)
-    .where(eq(chatSessions.id, request.sessionId))
+  const messageId = generateUUID()
+  const now = Date.now()
 
-  // 2. スキーマバージョンに応じた自動アップグレード
-  let data = JSON.parse(session.data) as SessionData
-  if (session.dataSchemaVersion < CURRENT_DATA_SCHEMA_VERSION) {
-    data = await migrateSessionData(data, session.dataSchemaVersion, CURRENT_DATA_SCHEMA_VERSION)
-  }
-
-  // 3. メッセージ追加
-  const newMessage: ChatMessage = {
-    id: generateUUID(),
+  // 1. メッセージレコード挿入
+  await db.insert(chatMessages).values({
+    id: messageId,
+    sessionId: request.sessionId,
     role: request.role,
-    content: request.content,
-    timestamp: new Date().toISOString(),
-    ...
-  }
-  data.messages.push(newMessage)
+    createdAt: now,
+    completedAt: now,  // ストリーミング完了後なので即座に完了扱い
+    inputTokens: request.inputTokens,
+    outputTokens: request.outputTokens,
+    error: request.error ? JSON.stringify(request.error) : null
+  })
 
-  // 4. DB 更新（トランザクション）
+  // 2. パートレコード挿入（複数）
+  for (const part of request.parts) {
+    const partId = generateUUID()
+    await db.insert(messageParts).values({
+      id: partId,
+      messageId,
+      sessionId: request.sessionId,
+      type: part.type,
+      createdAt: now,
+      updatedAt: now,
+      content: part.type === 'text' ? part.content : null,
+      toolCallId: part.type === 'tool_call' ? part.toolCallId : null,
+      toolName: part.type === 'tool_call' ? part.toolName : null,
+      toolInput: part.type === 'tool_call' ? JSON.stringify(part.input) : null,
+      toolInputText: part.type === 'tool_call' ? JSON.stringify(part.input, null, 2) : null
+      // tool_status は削除（結果は tool_call_results で管理）
+    })
+  }
+
+  // 3. セッション更新（messageCount, updatedAt）
   await db.update(chatSessions)
     .set({
-      data: JSON.stringify(data),
-      dataSchemaVersion: CURRENT_DATA_SCHEMA_VERSION,  // ← バージョンを更新
-      messageCount: data.messages.length,
-      updatedAt: new Date()
+      messageCount: sql`${chatSessions.messageCount} + 1`,
+      updatedAt: now
     })
     .where(eq(chatSessions.id, request.sessionId))
 
-  return newMessage
+  return { messageId }
 }
 ```
 
@@ -1141,64 +876,70 @@ async addMessage(request: AddMessageRequest) {
 
 ```typescript
 // セッション作成
-createChatSession(request: CreateSessionRequest): Promise<Result<ChatSession>>
+createChatSession(request: CreateSessionRequest): Promise<Result<string>>  // Returns sessionId
 
-// セッション一覧取得
-listChatSessions(options?: { 
-  limit?: number, 
+// セッション一覧取得（メタデータのみ、メッセージ含まない）
+listChatSessions(options?: {
+  limit?: number,
   offset?: number,
   sortBy?: 'updatedAt' | 'createdAt' | 'title'
-}): Promise<Result<ChatSession[]>>
+}): Promise<Result<ChatSessionRow[]>>
 
-// セッション取得（メッセージデータ含む・自動アップグレード）
-getChatSession(sessionId: string): Promise<Result<ChatSession | null>>
+// セッション取得（メッセージ・パート含む）
+getChatSession(sessionId: string): Promise<Result<ChatSessionWithMessages | null>>
 
-// セッション更新（タイトル、メタデータ）
-updateChatSession(sessionId: string, request: UpdateSessionRequest): Promise<Result<void>>
+// セッション更新（タイトル、プロバイダー設定など）
+updateChatSession(sessionId: string, updates: Partial<Pick<ChatSessionRow, 'title' | 'providerConfigId' | 'modelId'>>): Promise<Result<void>>
 
-// セッション削除（ハードデリート）
+// セッション削除（CASCADE によりメッセージ・パートも削除）
 deleteChatSession(sessionId: string): Promise<Result<void>>
 
-// セッション検索（タイトル・タグ・メモで）
-searchChatSessions(query: string): Promise<Result<ChatSession[]>>
-
-// セッションデータマイグレーション（バッチ処理用）
-migrateSessionData(sessionId: string): Promise<Result<void>>
-
-// 全セッションをマイグレーション（管理機能）
-migrateAllSessions(): Promise<Result<{ migratedCount: number, failedCount: number }>>
+// セッション検索（タイトル検索）
+searchChatSessions(query: string): Promise<Result<ChatSessionRow[]>>
 ```
 
 #### メッセージ操作
 
 ```typescript
-// メッセージ追加（セッションの JSON data に追加＆updatedAt 更新）
-addChatMessage(request: AddMessageRequest): Promise<Result<ChatMessage>>
+// メッセージ追加（メッセージ + 複数パートを一括追加）
+addChatMessage(request: AddMessageRequest): Promise<Result<string>>  // Returns messageId
 
 // メッセージ削除（指定メッセージ以降を削除）
 deleteMessagesAfter(sessionId: string, messageId: string): Promise<Result<void>>
 
-// メッセージ編集（特定メッセージのコンテンツを更新）
-editChatMessage(sessionId: string, messageId: string, newContent: string): Promise<Result<void>>
+// ツール呼び出し結果の更新（ストリーミング中に呼ばれる）
+updateToolCallResult(request: UpdateToolCallResultRequest): Promise<Result<void>>
 ```
 
 #### セッション復元
 
 ```typescript
-// 最後に使用したセッション ID を取得
+// 最後に使用したセッション ID を取得（Settings テーブルから）
 getLastSessionId(): Promise<Result<string | null>>
 
-// 最後に使用したセッション ID を保存
+// 最後に使用したセッション ID を保存（Settings テーブルへ）
 setLastSessionId(sessionId: string): Promise<Result<void>>
 ```
 
 ### 実装上の注意点
 
-- **メッセージ追加時**: sessionId の data（JSON）にメッセージを追加し、messageCount、dataSchemaVersion、updatedAt をインクリメント
-- **メッセージ削除時**: 指定メッセージ以降を削除して data を更新、messageCount と updatedAt を更新
-- **セッション読み込み時**: 自動的に dataSchemaVersion をチェックしてアップグレード
-- **セッション保存時**: ChatSession を JSON にシリアライズして保存、dataSchemaVersion を CURRENT_DATA_SCHEMA_VERSION に設定
-- **トランザクション**: メッセージ追加・削除時は単一の UPDATE トランザクションで保証
+- **メッセージ追加時**:
+  - トランザクション内で chat_messages, message_parts（複数）を INSERT
+  - chat_sessions.messageCount と updatedAt を UPDATE
+  - Unix timestamp で保存、API レスポンスは ISO 8601 に変換
+
+- **メッセージ削除時**:
+  - 指定メッセージ以降の chat_messages を DELETE（CASCADE で parts, results も削除）
+  - messageCount を再計算して chat_sessions を UPDATE
+
+- **セッション読み込み時**:
+  - chat_messages, message_parts, tool_call_results を JOIN して取得
+  - Unix timestamp を ISO 8601 に変換
+  - JSON フィールド（toolInput, output, error）をパース
+
+- **トランザクション**:
+  - メッセージ追加は単一トランザクション（message + parts の整合性保証）
+  - Drizzle ORM の `db.transaction()` を使用
 
 ---
 
@@ -1226,26 +967,38 @@ ChatInterface に表示
 ```
 ユーザー: メッセージ入力 → 送信
   ↓
-Renderer: addChatMessage (role: 'user')
-  ├─ sessionId, content
+Renderer: ① ユーザーメッセージを即座に DB 保存
+  ├─ addChatMessage({ role: 'user', parts: [{ type: 'text', content: '...' }] })
+  ├─ UI に即座に表示
   ↓
-Backend: addChatMessage handler
-  ├─ セッションの JSON data を読込
-  ├─ messages 配列にメッセージ追加
-  ├─ messageCount と updatedAt を更新
-  ├─ 全体を JSON で DB 保存
+Renderer: ② AI ストリーミング開始
+  ├─ streamAIText(messages, options)
   ↓
-AI 処理（ストリーミング）
-  ├─ 応答テキストを取得
-  ├─ ツール呼び出し実行
+Backend: ストリーミング処理（stream.ts）
+  ├─ aiChatChunk イベント送信（テキスト）
+  ├─ aiToolCall イベント送信（ツール呼び出し開始）
+  ├─ aiToolResult イベント送信（ツール実行結果）
+  ├─ aiChatEnd イベント送信（完了）
   ↓
-Renderer: addChatMessage (role: 'assistant')
-  ├─ 完全な応答テキスト
-  ├─ usage（トークン）
-  ├─ toolCalls（ツール呼び出し情報）
-  ├─ JSON data に追加
+Renderer: ③ ストリーミング完了時にアシスタントメッセージを DB 保存
+  ├─ 蓄積した全パート（text, tool_call）を整形
+  ├─ addChatMessage({
+  │    role: 'assistant',
+  │    parts: [
+  │      { type: 'text', content: '完全なテキスト' },
+  │      { type: 'tool_call', toolCallId, toolName, input }
+  │    ],
+  │    inputTokens, outputTokens
+  │  })
   ↓
-DB 保存（単一の UPDATE）
+Backend: ChatSessionStore
+  ├─ トランザクション開始
+  ├─ chat_messages INSERT
+  ├─ message_parts INSERT（複数）
+  ├─ chat_sessions UPDATE（messageCount, updatedAt）
+  ├─ コミット
+  ↓
+永続化完了
 ```
 
 ### フロー3: セッション切り替え
@@ -1254,12 +1007,15 @@ DB 保存（単一の UPDATE）
 ユーザー: SessionList からセッションクリック
   ↓
 Renderer: setLastSessionId(sessionId)
-  ├─ Backend に通知
+  ├─ Backend に通知（Settings テーブル更新）
   ↓
-Renderer: getChatMessages(sessionId)
-  ├─ すべてのメッセージ取得
+Renderer: getChatSession(sessionId)
+  ├─ セッション + メッセージ + パート すべて取得
+  ├─ JOIN で chat_messages, message_parts, tool_call_results を結合
   ↓
 ChatInterface: メッセージ表示
+  ├─ ThreadMessage[] に変換
+  ├─ テキストパート、ツールパートをレンダリング
 ```
 
 ### フロー4: アプリ再起動後に会話再開
@@ -1272,7 +1028,7 @@ Backend: 初期化
   ↓
 Renderer: 最後のセッションを復元
   ├─ getChatSession(lastSessionId)
-  ├─ getChatMessages(lastSessionId)
+  ├─ セッション + メッセージ + パート すべて取得
   ↓
 前回の会話が表示される
   ↓
@@ -1285,161 +1041,60 @@ Renderer: 最後のセッションを復元
 
 ### 目的
 
-JSON スキーマが将来変更される場合に、古い形式と新しい形式を共存させながら、シームレスにマイグレーションを行う仕組みです。
+データベーススキーマが将来変更される場合（テーブル構造、カラム追加など）に、段階的にマイグレーションを行う仕組みです。
 
 ### バージョン管理戦略
 
-各セッションに `dataSchemaVersion` を記録し、読み込み時に自動的にアップグレードします。
+**Drizzle Kit のマイグレーション機能**を使用します：
 
-```
-┌─────────────────────────────────────────────────────┐
-│ データバージョンの進化                                 │
-├─────────────────────────────────────────────────────┤
-│ v1 (現在)                                            │
-│ ├─ messages: ChatMessage[]                          │
-│ ├─ metadata: SessionMetadata                        │
-│                                                     │
-│ v2 (将来の例)                                        │
-│ ├─ messages: ChatMessage[] (拡張フィールド追加)      │
-│ ├─ metadata: SessionMetadata                        │
-│ ├─ archived: ArchivedMessage[]  (新フィールド)      │
-│                                                     │
-│ v3 (さらに将来の例)                                   │
-│ ├─ ...その他変更                                     │
-└─────────────────────────────────────────────────────┘
+1. **スキーマ変更時**: `pnpm run drizzle-kit generate` で migration SQL を生成
+2. **アプリ起動時**: `db/index.ts` で自動的にマイグレーション実行
+3. **バージョン記録**: Drizzle の `__drizzle_migrations` テーブルで管理
+
+### マイグレーション例
+
+```bash
+# 新しいカラムを追加する場合
+# 1. schema.ts を編集
+# 2. マイグレーション生成
+pnpm run drizzle-kit generate
+
+# 3. アプリ起動時に自動適用（db/index.ts で migrate() 実行）
 ```
 
-### バージョン定義
+### セッションごとの data_schema_version フィールド
+
+`data_schema_version` は各セッションのデータ構造バージョンを記録します：
+
+- **v1（初期）**: 基本的なメッセージ・パート構造
+- **v2（将来）**: 要約メッセージ、アーカイブパートなどの追加
+
+**読み込み時の互換性処理**:
 
 ```typescript
-// スキーマバージョン定数
-const CURRENT_DATA_SCHEMA_VERSION = 1
-
-// バージョン互換性
-type DataSchemaVersion = 1 | 2 | 3  // 現在と将来のバージョン
-
-// バージョンごとのスキーマ定義
-interface SessionDataV1 {
-  messages: ChatMessage[]
-  metadata: SessionMetadata
-}
-
-interface SessionDataV2 extends SessionDataV1 {
-  // 新フィールド
-  archived?: ArchivedMessage[]
-}
-
-type SessionData = SessionDataV1 | SessionDataV2  // Union 型で対応
-```
-
-### マイグレーション関数
-
-```typescript
-// マイグレーション関数レジストリ
-type DataMigrator = (data: unknown) => unknown
-
-const migratorRegistry: Record<DataSchemaVersion, DataMigrator | undefined> = {
-  1: migrateV1ToV2,  // v1 → v2 のマイグレーション関数
-  2: migrateV2ToV3,  // v2 → v3 のマイグレーション関数
-}
-
-// v1 → v2 マイグレーション例
-function migrateV1ToV2(data: SessionDataV1): SessionDataV2 {
-  return {
-    ...data,
-    archived: []  // 新フィールドにデフォルト値
-  }
-}
-
-// 汎用マイグレーション関数
-async function migrateSessionData(
-  data: unknown,
-  fromVersion: DataSchemaVersion,
-  toVersion: DataSchemaVersion
-): Promise<SessionData> {
-  let current = data
-
-  // fromVersion から toVersion へ順番にマイグレーション
-  for (let v = fromVersion; v < toVersion; v++) {
-    const migrator = migratorRegistry[v]
-    if (!migrator) {
-      throw new Error(`No migrator found for version ${v}`)
-    }
-    current = migrator(current)
-  }
-
-  return current as SessionData
-}
-```
-
-### 読み込み時の自動アップグレード
-
-```typescript
-// getChatSession でセッション読み込み時
-async getChatSession(sessionId: string): Promise<ChatSession | null> {
-  const row = await db.select()
+async getChatSession(sessionId: string): Promise<ChatSessionWithMessages | null> {
+  const session = await db.select()
     .from(chatSessions)
     .where(eq(chatSessions.id, sessionId))
 
-  if (!row) return null
+  if (!session) return null
 
-  let data = JSON.parse(row.data)
-
-  // 自動アップグレード（遅延マイグレーション）
-  if (row.dataSchemaVersion < CURRENT_DATA_SCHEMA_VERSION) {
-    logger.info(`Migrating session ${sessionId} from v${row.dataSchemaVersion} to v${CURRENT_DATA_SCHEMA_VERSION}`)
-    data = await migrateSessionData(data, row.dataSchemaVersion, CURRENT_DATA_SCHEMA_VERSION)
-
-    // アップグレード後を DB に反映
-    await db.update(chatSessions)
-      .set({
-        data: JSON.stringify(data),
-        dataSchemaVersion: CURRENT_DATA_SCHEMA_VERSION,
-        updatedAt: new Date()
-      })
-      .where(eq(chatSessions.id, sessionId))
+  // 古いバージョンのセッションを検出
+  if (session.dataSchemaVersion < CURRENT_DATA_SCHEMA_VERSION) {
+    logger.info(`Session ${sessionId} is v${session.dataSchemaVersion}, upgrading to v${CURRENT_DATA_SCHEMA_VERSION}`)
+    // 必要に応じてデータ変換処理を実行
   }
 
-  return {
-    ...row,
-    data
-  }
-}
-```
-
-### バッチマイグレーション
-
-```typescript
-// 全セッションをマイグレーション（管理機能・将来の利用）
-async migrateAllSessions(): Promise<{ migratedCount: number, failedCount: number }> {
-  const sessions = await db.select()
-    .from(chatSessions)
-    .where(lt(chatSessions.dataSchemaVersion, CURRENT_DATA_SCHEMA_VERSION))
-
-  let migratedCount = 0
-  let failedCount = 0
-
-  for (const session of sessions) {
-    try {
-      await this.getChatSession(session.id)  // 自動アップグレード処理を呼び出し
-      migratedCount++
-    } catch (error) {
-      logger.error(`Failed to migrate session ${session.id}:`, error)
-      failedCount++
-    }
-  }
-
-  return { migratedCount, failedCount }
+  // メッセージ・パートを取得...
 }
 ```
 
 ### メリット
 
-1. **段階的対応**: 読み込み時に自動マイグレーション、段階的に進行
-2. **新旧共存**: 旧バージョンと新バージョンが共存可能
-3. **保守性**: マイグレーション関数を一箇所に集中
-4. **ロールバック対応**: 必要に応じて逆マイグレーション関数も追加可能
-5. **監査**: どのセッションが何バージョンかを追跡可能
+1. **Drizzle 標準機能**: テーブル構造変更は Drizzle Kit で自動管理
+2. **段階的対応**: 読み込み時に dataSchemaVersion をチェックして互換性処理
+3. **保守性**: マイグレーション SQL は `resources/db/migrations/` に記録
+4. **監査**: どのセッションが何バージョンかを追跡可能
 
 ---
 
@@ -1535,44 +1190,41 @@ async migrateAllSessions(): Promise<{ migratedCount: number, failedCount: number
 **フェーズ 1: DB スキーマ・Store 実装**
 
 - [ ] Drizzle スキーマ定義
-  - [ ] chat_sessions テーブル
-  - [ ] chat_messages テーブル
-  - [ ] message_parts テーブル
-  - [ ] tool_call_results テーブル
-  - [ ] インデックス定義
-- [ ] DB マイグレーション (Drizzle Migrate)
+  - [ ] chat_sessions テーブル（snake_case カラム名、integer timestamp）
+  - [ ] chat_messages テーブル（snake_case カラム名、integer timestamp）
+  - [ ] message_parts テーブル（snake_case カラム名、integer timestamp）
+  - [ ] tool_call_results テーブル（snake_case カラム名、integer timestamp）
+  - [ ] インデックス定義（session_id, created_at, tool_call_id など）
+- [ ] DB マイグレーション生成（`pnpm run drizzle-kit generate`）
 - [ ] ChatSessionStore クラス実装
-  - [ ] `createSession(title, modelConfigId)`
-  - [ ] `getSession(sessionId)` - メッセージ・パート一括ロード
-  - [ ] `listSessions()` - 一覧取得
-  - [ ] `updateSession(sessionId, updates)`
-  - [ ] `deleteSession(sessionId)` - ハードデリート
-  - [ ] `addMessage(sessionId, role, content)` - ユーザーメッセージ
-  - [ ] `completeAssistantMessage(messageId)` - streaming 完了フラグ
-  - [ ] `addMessagePart(messageId, type, content)` - パート追加
-  - [ ] `addToolCallPart(messageId, toolCallId, toolName, input)`
-  - [ ] `updateToolCallResult(toolCallId, output, status, error)`
-  - [ ] `deleteMessagesAfter(sessionId, messageId)` - 以降削除
+  - [ ] `createSession(title, providerConfigId, modelId)` - Returns sessionId
+  - [ ] `getSession(sessionId)` - メッセージ・パート・結果を JOIN で取得、ISO 8601 変換
+  - [ ] `listSessions(options)` - 一覧取得（メタデータのみ）
+  - [ ] `updateSession(sessionId, updates)` - タイトル、設定更新
+  - [ ] `deleteSession(sessionId)` - CASCADE でメッセージ・パートも削除
+  - [ ] `addMessage(request: AddMessageRequest)` - トランザクション内で message + parts 追加
+  - [ ] `updateToolCallResult(request)` - tool_call_results テーブル INSERT/UPDATE
+  - [ ] `deleteMessagesAfter(sessionId, messageId)` - 以降削除 + messageCount 再計算
+  - [ ] Unix timestamp ↔ ISO 8601 変換ヘルパー関数
 
 **フェーズ 2: Handler IPC 統合**
 
-- [ ] Backend API メソッド追加
-  - [ ] `createChatSession(title, modelConfigId)`
-  - [ ] `listChatSessions()`
+- [ ] Backend API メソッド追加（`src/backend/handlers/`）
+  - [ ] `createChatSession(request)` - Returns sessionId
+  - [ ] `listChatSessions(options)`
   - [ ] `getChatSession(sessionId)`
-  - [ ] `updateChatSession(sessionId, title)`
+  - [ ] `updateChatSession(sessionId, updates)`
   - [ ] `deleteChatSession(sessionId)`
-  - [ ] `addChatMessage(sessionId, role, content, tokens)`
-  - [ ] `completeAssistantMessage(messageId)`
-  - [ ] `addToolCallPart(messageId, toolCallId, toolName, input)`
-  - [ ] `updateToolCallResult(toolCallId, output, status, error)`
-  - [ ] `getLastSessionId()` / `setLastSessionId(sessionId)`
+  - [ ] `addChatMessage(request)` - Returns messageId
+  - [ ] `updateToolCallResult(request)`
   - [ ] `deleteMessagesAfter(sessionId, messageId)`
-- [ ] ストリーミング・ツール結果フロー統合
-  - [ ] streaming 完了時に assistant message を persist
-  - [ ] ツール呼び出し → パート追加
-  - [ ] ツール結果 → result テーブル更新
+  - [ ] `getLastSessionId()` / `setLastSessionId(sessionId)` - Settings テーブル経由
+- [ ] ストリーミング完了時の永続化
+  - [ ] Renderer 側で aiChatEnd イベント受信時に addChatMessage() 呼び出し
+  - [ ] 蓄積したパート（text, tool_call）を整形して送信
+  - [ ] ツール結果は既に updateToolCallResult() で保存済み
 - [ ] エラーハンドリング・トランザクション
+  - [ ] Drizzle の `db.transaction()` でメッセージ追加を保証
 
 **フェーズ 3: ユニットテスト**
 
@@ -1702,6 +1354,9 @@ tool_call_results (ツール実行結果)
 - ✅ 長期保守性確保（3NF スキーマ）
 - ✅ ストリーミング完了時のみ永続化
 - ✅ ツール呼び出し結果の正確な追跡
-- ✅ スキーマバージョン管理で将来対応
+- ✅ Drizzle Kit によるマイグレーション管理
+- ✅ Unix timestamp で保存、ISO 8601 で API 提供
+- ✅ better-sqlite3 + Drizzle ORM の既存スタックを活用
+- ✅ AIProviderConfiguration + AIModelDefinition の v2 設定に対応
 
 
