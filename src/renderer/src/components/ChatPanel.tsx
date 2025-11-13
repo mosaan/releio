@@ -149,6 +149,7 @@ export function ChatPanel({ onSettings }: ChatPanelProps): React.JSX.Element {
                   key={currentSession?.id} // Force remount when session changes
                   modelSelection={modelSelection}
                   chatSessionId={currentSession?.id}
+                  initialMessages={currentSession?.messages}
                 >
                   <Thread />
                 </AIRuntimeProvider>

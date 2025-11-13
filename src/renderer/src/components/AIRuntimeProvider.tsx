@@ -1,19 +1,22 @@
-import { AssistantRuntimeProvider, useLocalRuntime } from '@assistant-ui/react'
+import { AssistantRuntimeProvider, useLocalRuntime, ExportedMessageRepository } from '@assistant-ui/react'
 import type { ChatModelAdapter, ThreadMessage } from '@assistant-ui/react'
-import { ReactNode } from 'react'
+import { AISDKMessageConverter } from '@assistant-ui/react-ai-sdk'
+import { ReactNode, useEffect } from 'react'
 import { logger } from '@renderer/lib/logger'
 import { streamText } from '@renderer/lib/ai'
 import type { AIModelSelection } from '@common/types'
-import type { AddMessageRequest } from '@common/chat-types'
+import type { AddMessageRequest, ChatMessageWithParts } from '@common/chat-types'
 import { isOk } from '@common/result'
+import { convertMessagesToAISDKFormat } from '@renderer/lib/message-converter'
 
 interface AIRuntimeProviderProps {
   children: ReactNode
   modelSelection: AIModelSelection | null
   chatSessionId?: string | null
+  initialMessages?: ChatMessageWithParts[]
 }
 
-export function AIRuntimeProvider({ children, modelSelection, chatSessionId }: AIRuntimeProviderProps): React.JSX.Element {
+export function AIRuntimeProvider({ children, modelSelection, chatSessionId, initialMessages }: AIRuntimeProviderProps): React.JSX.Element {
   // Create adapter with modelSelection and chatSessionId closure
   const createAIModelAdapter = (
     currentSelection: AIModelSelection | null,
@@ -114,6 +117,36 @@ export function AIRuntimeProvider({ children, modelSelection, chatSessionId }: A
   })
 
   const runtime = useLocalRuntime(createAIModelAdapter(modelSelection, chatSessionId))
+
+  // Import initial messages when session changes
+  useEffect(() => {
+    if (initialMessages && initialMessages.length > 0) {
+      logger.info(`[History] Loading ${initialMessages.length} messages into runtime`)
+
+      try {
+        // Convert database messages to AI SDK format
+        const aiMessages = convertMessagesToAISDKFormat(initialMessages)
+
+        // Convert AI SDK messages to ThreadMessages
+        const threadMessages = AISDKMessageConverter.toThreadMessages(aiMessages)
+
+        // Import messages into runtime
+        runtime.threads.main.import(
+          ExportedMessageRepository.fromArray(threadMessages)
+        )
+
+        logger.info('[History] Messages loaded successfully')
+      } catch (error) {
+        logger.error('[History] Failed to load messages:', error)
+      }
+    } else {
+      // Clear messages when switching to a session with no history
+      logger.info('[History] No initial messages, clearing runtime')
+      runtime.threads.main.import(
+        ExportedMessageRepository.fromArray([])
+      )
+    }
+  }, [chatSessionId, initialMessages, runtime])
 
   return <AssistantRuntimeProvider runtime={runtime}>{children}</AssistantRuntimeProvider>
 }

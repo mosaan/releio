@@ -23,6 +23,9 @@ importers:
       '@ai-sdk/openai':
         specifier: ^2.0.65
         version: 2.0.65(zod@3.25.76)
+      '@ai-sdk/ui-utils':
+        specifier: ^1.2.11
+        version: 1.2.11(zod@3.25.76)
       '@cypress/get-windows-proxy':
         specifier: ^1.6.3
         version: 1.6.3
