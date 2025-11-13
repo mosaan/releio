@@ -8,7 +8,8 @@ export default defineConfig({
     name: 'renderer',
     environment: 'happy-dom',
     globals: true,
-    setupFiles: ['./tests/setup-renderer.ts']
+    setupFiles: ['./tests/setup-renderer.ts'],
+    include: ['tests/renderer/**/*.test.{ts,tsx}']
   },
   resolve: {
     alias: {
