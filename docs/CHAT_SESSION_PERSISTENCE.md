@@ -16,13 +16,22 @@ You will see this working by starting the app, typing several messages to have a
 - [x] (2025-11-13) Milestone 2: Implement ChatSessionStore service class with database operations - COMPLETED (95%, tests need fixing)
 - [x] (2025-11-13) Milestone 3: Add IPC handlers to expose database operations to UI - COMPLETED
 - [x] (2025-11-13) Milestone 4: Build session list UI and session switching logic - COMPLETED
-- [x] (2025-11-13) Milestone 5: Integrate message persistence into streaming workflow - COMPLETED (with known limitation)
+- [x] (2025-11-13) Milestone 5: Integrate message persistence into streaming workflow - COMPLETED
+- [ ] (2025-11-13) Milestone 6: Implement message history restoration when switching sessions - IN PROGRESS
 
 ## Surprises & Discoveries
 
 - **2025-11-13**: Discovered test infrastructure issue with libsql/Drizzle transactions in Vitest environment. When using `createTestDatabaseWithChatTables()` to create in-memory test databases, tables created via `client.execute()` are not visible within Drizzle ORM transactions executed via `db.transaction()`. This causes 8 out of 20 ChatSessionStore tests to fail with "no such table" errors. The issue appears to be related to how libsql handles transaction isolation with in-memory databases. Enabling `PRAGMA foreign_keys = ON` did not resolve the issue. This is purely a test infrastructure problem - the core ChatSessionStore implementation logic is sound and will work correctly in production with the persistent database. Workaround options to investigate: (1) Use Drizzle's migrate() function instead of raw SQL for test setup, (2) Create tables outside of any implicit transaction context, (3) Use a file-based test database instead of :memory:.
 
-- **2025-11-13** (Milestone 5): Assistant-UI library limitation for historical message loading. The `@assistant-ui/react` library's `useLocalRuntime` creates an in-memory chat runtime that starts with an empty message history. While we successfully integrated message persistence (user messages saved immediately, assistant messages saved when streaming completes, tool results saved as they arrive), loading historical messages when switching sessions is not supported by the library's current API. The runtime does not provide a way to initialize with existing messages from the database. Workaround: Each session starts with a fresh chat interface when switched, but all messages are persisted in the database and can be queried via direct database access or a custom message history viewer. Future enhancement would require either: (1) implementing a custom runtime adapter that loads initial messages, (2) waiting for assistant-ui to add initial message support, or (3) using a different chat UI library with better persistence support.
+- **2025-11-13** (Milestone 5 - CORRECTED): Initial misunderstanding about Assistant-UI message history restoration. Originally believed that `@assistant-ui/react` did not support loading historical messages when switching sessions. This was incorrect. Further investigation revealed that the library provides full support for message history restoration through the `runtime.threads.main.import()` API combined with `ExportedMessageRepository.fromArray()` and `AISDKMessageConverter.toThreadMessages()`. The correct pattern is:
+  ```javascript
+  runtime.threads.main.import(
+    ExportedMessageRepository.fromArray(
+      AISDKMessageConverter.toThreadMessages(messages)
+    )
+  );
+  ```
+  This discovery came after reviewing GitHub issue #2365 and examining the library's exported APIs. The runtime's `import()` method accepts an `ExportedMessageRepository` which can be created from an array of messages. The `AISDKMessageConverter` is necessary to convert AI SDK messages to ThreadMessage format while preserving message tracking. Both utilities are properly exported from `@assistant-ui/react` and `@assistant-ui/react-ai-sdk` packages. This means full session history restoration is achievable and should be implemented.
 
 - **2025-11-13** (Frontend Tests): Happy-dom window object replacement breaks userEvent. When setting up test mocks for the renderer process, replacing the entire `window` object with `globalThis.window = { ... }` causes React Testing Library's `userEvent.setup()` to fail with clipboard-related errors. The issue is that happy-dom creates a minimal DOM environment with proper document, navigator, and window objects that have necessary APIs like `addEventListener`. Replacing the entire window object destroys this setup. Solution: Use `Object.defineProperty(window, 'backend', { ... })` to extend the existing window object instead of replacing it. This preserves the DOM environment while adding custom test mocks. This pattern should be used for all Electron renderer tests.
 
@@ -151,23 +160,23 @@ You will see this working by starting the app, typing several messages to have a
 - Session switching resets chat UI via React key prop
 
 **Challenges:**
-- Assistant-UI library (`@assistant-ui/react`) does not support initializing runtime with historical messages
-- `useLocalRuntime` creates empty in-memory chat state on mount
-- No API provided to load existing messages from database into the runtime
-- This is a fundamental limitation of the library's current architecture
+- Initial misunderstanding of assistant-ui library capabilities regarding message history restoration
+- Required deeper investigation into library APIs to discover `runtime.threads.main.import()` method
+- Documentation for message restoration was not immediately obvious, requiring GitHub issue review
 
 **Lessons Learned:**
 - Message persistence can be cleanly separated from UI state management
 - Backend streaming is the right place for assistant message persistence (single source of truth)
 - Tool invocation lifecycle tracking works well with immediate result persistence
-- Library limitations should be documented early to manage expectations
-- Future work: Consider custom runtime adapter or alternative chat UI library for full persistence support
+- Always thoroughly investigate library APIs before concluding features are unsupported
+- GitHub issues and source code examination are valuable for discovering undocumented features
+- The assistant-ui library DOES support message history restoration via `runtime.threads.main.import()`
 
-**Known Limitations:**
-- Historical messages do not load when switching sessions (limitation of assistant-ui library)
-- Each session starts with empty chat UI, but messages are persisted in database
-- Users can query database directly to view historical conversations
-- Workaround requires either custom runtime implementation or library replacement
+**Status Update (Post-Investigation):**
+- ✅ Message persistence fully implemented and working
+- ⚠️ Message history restoration NOT YET IMPLEMENTED (but library supports it)
+- 📋 Next step: Implement session history loading using `runtime.threads.main.import()` API
+- 📋 Required: Convert database messages to AI SDK format, then use `AISDKMessageConverter.toThreadMessages()`
 
 **Next Steps:**
 - Consider implementing custom message history viewer component
@@ -270,9 +279,12 @@ All five milestones of the Chat Session Persistence feature have been successful
 - ✅ Frontend test coverage for SessionManager (9 test cases, 100% passing)
 
 **Known Limitations:**
-- Historical messages do not load when switching sessions (limitation of @assistant-ui/react library)
+- Historical messages do not load when switching sessions (NOT YET IMPLEMENTED - library supports it via `runtime.threads.main.import()`)
 - 8 out of 20 backend tests fail due to libsql/Drizzle transaction isolation issue in test environment (production code is unaffected)
 - SessionList and ChatPanel components do not yet have dedicated test coverage (SessionManager context is fully tested)
+
+**Pending Implementation:**
+- Message history restoration when switching sessions (all APIs available, implementation required)
 
 **Code Quality:**
 - TypeScript compilation: ✅ No errors
