@@ -46,23 +46,29 @@ export function SessionManagerProvider({ children }: SessionManagerProviderProps
         setSessions(result.value)
 
         // Update currentSession's messageCount if it's in the refreshed list
-        if (currentSessionId && currentSession) {
+        setCurrentSession((prevSession) => {
+          if (!prevSession || !currentSessionId) {
+            return prevSession
+          }
+
           const updatedSession = result.value.find(s => s.id === currentSessionId)
-          if (updatedSession && updatedSession.messageCount !== currentSession.messageCount) {
-            setCurrentSession({
-              ...currentSession,
+          if (updatedSession && updatedSession.messageCount !== prevSession.messageCount) {
+            return {
+              ...prevSession,
               messageCount: updatedSession.messageCount,
               updatedAt: new Date(updatedSession.updatedAt).toISOString()
-            })
+            }
           }
-        }
+
+          return prevSession
+        })
       } else {
         logger.error('Failed to load sessions:', result.error)
       }
     } catch (error) {
       logger.error('Error loading sessions:', error)
     }
-  }, [currentSessionId, currentSession])
+  }, [currentSessionId])
 
   // Load current session details
   const loadCurrentSession = useCallback(async (sessionId: string) => {

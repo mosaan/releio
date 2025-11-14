@@ -1,6 +1,6 @@
 import { AssistantRuntimeProvider, useLocalRuntime, ExportedMessageRepository } from '@assistant-ui/react'
 import type { ChatModelAdapter, ThreadMessage } from '@assistant-ui/react'
-import { ReactNode, useEffect } from 'react'
+import { ReactNode, useEffect, useCallback, useMemo, useRef } from 'react'
 import { logger } from '@renderer/lib/logger'
 import { streamText } from '@renderer/lib/ai'
 import type { AIModelSelection } from '@common/types'
@@ -17,11 +17,16 @@ interface AIRuntimeProviderProps {
 }
 
 export function AIRuntimeProvider({ children, modelSelection, chatSessionId, initialMessages, onMessageCompleted }: AIRuntimeProviderProps): React.JSX.Element {
+  // Keep reference to latest onMessageCompleted callback
+  const onMessageCompletedRef = useRef(onMessageCompleted)
+  useEffect(() => {
+    onMessageCompletedRef.current = onMessageCompleted
+  }, [onMessageCompleted])
+
   // Create adapter with modelSelection and chatSessionId closure
-  const createAIModelAdapter = (
+  const createAIModelAdapter = useCallback((
     currentSelection: AIModelSelection | null,
-    sessionId: string | null | undefined,
-    messageCompletedCallback?: () => void | Promise<void>
+    sessionId: string | null | undefined
   ): ChatModelAdapter => ({
     async *run({ messages, abortSignal }) {
       // Convert Assistant-ui messages to AIMessage format
@@ -116,13 +121,18 @@ export function AIRuntimeProvider({ children, modelSelection, chatSessionId, ini
       logger.info('AI stream completed')
 
       // Notify that message exchange is complete (both user and assistant messages saved)
-      if (messageCompletedCallback) {
-        await messageCompletedCallback()
+      if (onMessageCompletedRef.current) {
+        await onMessageCompletedRef.current()
       }
     }
-  })
+  }), [onMessageCompletedRef])
 
-  const runtime = useLocalRuntime(createAIModelAdapter(modelSelection, chatSessionId, onMessageCompleted))
+  const adapter = useMemo(
+    () => createAIModelAdapter(modelSelection, chatSessionId),
+    [createAIModelAdapter, modelSelection, chatSessionId]
+  )
+
+  const runtime = useLocalRuntime(adapter)
 
   // Import initial messages when session changes
   useEffect(() => {
