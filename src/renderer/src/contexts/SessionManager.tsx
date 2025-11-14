@@ -38,37 +38,19 @@ export function SessionManagerProvider({ children }: SessionManagerProviderProps
   const [isLoading, setIsLoading] = useState(true)
   const [modelSelection, setModelSelection] = useState<AIModelSelection | null>(null)
 
-  // Load sessions from backend
+  // Load sessions from backend (pure function - no currentSessionId dependency)
   const refreshSessions = useCallback(async () => {
     try {
       const result = await window.backend.listChatSessions({ limit: 100 })
       if (isOk(result)) {
         setSessions(result.value)
-
-        // Update currentSession's messageCount if it's in the refreshed list
-        setCurrentSession((prevSession) => {
-          if (!prevSession || !currentSessionId) {
-            return prevSession
-          }
-
-          const updatedSession = result.value.find(s => s.id === currentSessionId)
-          if (updatedSession && updatedSession.messageCount !== prevSession.messageCount) {
-            return {
-              ...prevSession,
-              messageCount: updatedSession.messageCount,
-              updatedAt: new Date(updatedSession.updatedAt).toISOString()
-            }
-          }
-
-          return prevSession
-        })
       } else {
         logger.error('Failed to load sessions:', result.error)
       }
     } catch (error) {
       logger.error('Error loading sessions:', error)
     }
-  }, [currentSessionId])
+  }, [])
 
   // Load current session details
   const loadCurrentSession = useCallback(async (sessionId: string) => {
@@ -120,7 +102,40 @@ export function SessionManagerProvider({ children }: SessionManagerProviderProps
     }
 
     initialize()
-  }, [refreshSessions, loadCurrentSession])
+  }, [])
+
+  // Update current session metadata when sessions list or currentSessionId changes
+  useEffect(() => {
+    if (!currentSessionId) {
+      return
+    }
+
+    const updatedSession = sessions.find(s => s.id === currentSessionId)
+    if (!updatedSession) {
+      return
+    }
+
+    // Update currentSession with latest metadata from sessions list
+    setCurrentSession(prevSession => {
+      if (!prevSession) {
+        return prevSession
+      }
+
+      // Only update if messageCount or updatedAt changed
+      if (
+        updatedSession.messageCount === prevSession.messageCount &&
+        new Date(updatedSession.updatedAt).toISOString() === prevSession.updatedAt
+      ) {
+        return prevSession
+      }
+
+      return {
+        ...prevSession,
+        messageCount: updatedSession.messageCount,
+        updatedAt: new Date(updatedSession.updatedAt).toISOString()
+      }
+    })
+  }, [currentSessionId, sessions])
 
   // Create new session
   const createSession = useCallback(
