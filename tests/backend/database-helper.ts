@@ -42,12 +42,34 @@ export async function createTestDatabase(): Promise<ReturnType<typeof drizzle>> 
  * Creates a fresh in-memory test database with chat session tables
  */
 export async function createTestDatabaseWithChatTables(): Promise<ReturnType<typeof drizzle>> {
-  // Create base database
-  const testDb = await createTestDatabase()
-  const client = testDb.$client
+  // Create in-memory libSQL database
+  const client = createClient({ url: ':memory:' })
 
   // Enable foreign keys
   await client.execute('PRAGMA foreign_keys = ON')
+
+  // Create base tables
+  await client.execute(`
+    CREATE TABLE IF NOT EXISTS settings (
+      "key" TEXT PRIMARY KEY NOT NULL,
+      "value" TEXT NOT NULL
+    )
+  `)
+
+  await client.execute(`
+    CREATE TABLE IF NOT EXISTS mcp_servers (
+      id TEXT PRIMARY KEY NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT,
+      command TEXT NOT NULL,
+      args TEXT NOT NULL,
+      env TEXT,
+      enabled INTEGER DEFAULT 1 NOT NULL,
+      include_resources INTEGER DEFAULT 0 NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )
+  `)
 
   // Create chat_sessions table
   await client.execute(`
@@ -160,6 +182,9 @@ export async function createTestDatabaseWithChatTables(): Promise<ReturnType<typ
       FOREIGN KEY (message_cutoff_id) REFERENCES chat_messages(id) ON DELETE CASCADE
     )
   `)
+
+  // Create Drizzle instance after all tables are created
+  const testDb = drizzle({ client })
 
   return testDb
 }
