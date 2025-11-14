@@ -55,8 +55,14 @@ function App() {
     }
 
     connectToBackend()
+  }, [])
 
-    // Listen for backend exit events
+  // Set up backend exit event listener after connection is established
+  useEffect(() => {
+    if (!backendConnected) {
+      return
+    }
+
     const handleBackendExit = () => {
       logger.error('Backend process exited unexpectedly')
       setBackendConnected(false)
@@ -68,7 +74,7 @@ function App() {
     return () => {
       window.backend.offEvent('backendExited')
     }
-  }, [])
+  }, [backendConnected])
 
   const handleSettingsClick = (): void => {
     setCurrentPage('settings')
