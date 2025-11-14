@@ -55,6 +55,19 @@ function App() {
     }
 
     connectToBackend()
+
+    // Listen for backend exit events
+    const handleBackendExit = () => {
+      logger.error('Backend process exited unexpectedly')
+      setBackendConnected(false)
+      setConnectionError('Backend process exited unexpectedly. This may be due to a database migration error or other initialization failure.')
+    }
+
+    window.backend.onEvent('backendExited', handleBackendExit)
+
+    return () => {
+      window.backend.offEvent('backendExited')
+    }
   }, [])
 
   const handleSettingsClick = (): void => {
