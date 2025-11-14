@@ -6,7 +6,7 @@ import { AIRuntimeProvider } from '@renderer/components/AIRuntimeProvider'
 import { ModelSelector } from '@renderer/components/ModelSelector'
 import { Alert, AlertDescription, AlertTitle } from '@renderer/components/ui/alert'
 import { useSessionManager } from '@renderer/contexts/SessionManager'
-import type { AISettingsV2 } from '@common/types'
+import type { AISettingsV2, AIModelSelection } from '@common/types'
 import { isOk } from '@common/result'
 
 interface ChatPanelProps {
@@ -14,9 +14,22 @@ interface ChatPanelProps {
 }
 
 export function ChatPanel({ onSettings }: ChatPanelProps): React.JSX.Element {
-  const { currentSession, modelSelection, setModelSelection, refreshSessions } = useSessionManager()
+  const { currentSession, currentSessionId, modelSelection, setModelSelection, updateSession, refreshSessions } = useSessionManager()
   const [hasProviderConfigs, setHasProviderConfigs] = useState<boolean>(true)
   const [hasAvailableModels, setHasAvailableModels] = useState<boolean>(true)
+
+  // Handle model selection change and persist to database
+  const handleModelChange = async (newSelection: AIModelSelection | null) => {
+    setModelSelection(newSelection)
+
+    // Persist model selection to session if we have a current session
+    if (currentSessionId && newSelection) {
+      await updateSession(currentSessionId, {
+        providerConfigId: newSelection.providerConfigId,
+        modelId: newSelection.modelId
+      })
+    }
+  }
 
   // Check if there are any provider configurations and available models
   useEffect(() => {
@@ -76,7 +89,7 @@ export function ChatPanel({ onSettings }: ChatPanelProps): React.JSX.Element {
 
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
-              <ModelSelector selectedModel={modelSelection} onModelChange={setModelSelection} />
+              <ModelSelector selectedModel={modelSelection} onModelChange={handleModelChange} />
               {hasAvailableModels && !modelSelection && (
                 <div className="flex items-center gap-1 text-red-600 text-sm">
                   <AlertCircle className="h-4 w-4" />

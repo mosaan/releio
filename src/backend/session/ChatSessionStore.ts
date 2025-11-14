@@ -506,7 +506,7 @@ export class ChatSessionStore {
         })
         .where(eq(toolInvocations.toolCallId, request.toolCallId))
 
-      // Update the part status
+      // Update only the tool_result part (not the tool_invocation part)
       await tx
         .update(messageParts)
         .set({
@@ -517,7 +517,10 @@ export class ChatSessionStore {
           errorMessage: request.errorMessage || null,
           updatedAt: now
         })
-        .where(eq(messageParts.toolCallId, request.toolCallId))
+        .where(and(
+          eq(messageParts.toolCallId, request.toolCallId),
+          eq(messageParts.kind, 'tool_result')
+        ))
     })
   }
 
