@@ -47,11 +47,11 @@ export function SessionManagerProvider({ children }: SessionManagerProviderProps
 
         // Update currentSession's messageCount if it's in the refreshed list
         setCurrentSession((prevSession) => {
-          if (!prevSession || !currentSessionId) {
+          if (!prevSession) {
             return prevSession
           }
 
-          const updatedSession = result.value.find(s => s.id === currentSessionId)
+          const updatedSession = result.value.find(s => s.id === prevSession.id)
           if (updatedSession && updatedSession.messageCount !== prevSession.messageCount) {
             return {
               ...prevSession,
@@ -68,7 +68,7 @@ export function SessionManagerProvider({ children }: SessionManagerProviderProps
     } catch (error) {
       logger.error('Error loading sessions:', error)
     }
-  }, [currentSessionId])
+  }, [])
 
   // Load current session details
   const loadCurrentSession = useCallback(async (sessionId: string) => {
