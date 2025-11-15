@@ -66,29 +66,23 @@ export function AIRuntimeProvider({ children, modelSelection, chatSessionId, ini
       logger.info(`Starting AI stream with ${formattedMessages.length} messages, selection: ${selectionInfo}`)
       const stream = await streamText(formattedMessages, abortSignal, currentSelection, sessionId)
 
-      const textChunks: string[] = []
       const contentParts: any[] = []
-
-      // Helper function to build current content array
-      const buildContent = () => {
-        const parts: any[] = []
-
-        // Add all tool-call parts
-        parts.push(...contentParts)
-
-        // Add accumulated text (always include text part, even if empty)
-        const textContent = textChunks.join('')
-        parts.push({ type: 'text', text: textContent })
-
-        return parts
-      }
 
       for await (const chunk of stream) {
         if (abortSignal?.aborted) return
 
         if (chunk.type === 'text') {
-          textChunks.push(chunk.text)
-          yield { content: buildContent() }
+          const lastPart = contentParts[contentParts.length - 1]
+
+          if (lastPart?.type === 'text') {
+            contentParts[contentParts.length - 1] = {
+              ...lastPart,
+              text: `${lastPart.text}${chunk.text}`
+            }
+          } else {
+            contentParts.push({ type: 'text', text: chunk.text })
+          }
+          yield { content: [...contentParts] }
         } else if (chunk.type === 'tool-call') {
           logger.info('[MCP] Yielding tool-call:', chunk.toolName)
           // Add tool-call part
@@ -99,7 +93,7 @@ export function AIRuntimeProvider({ children, modelSelection, chatSessionId, ini
             args: chunk.input,
             argsText: JSON.stringify(chunk.input, null, 2)
           })
-          yield { content: buildContent() }
+          yield { content: [...contentParts] }
         } else if (chunk.type === 'tool-result') {
           logger.info('[MCP] Yielding tool-result:', chunk.toolName)
           // Find and update corresponding tool-call with result
@@ -114,7 +108,7 @@ export function AIRuntimeProvider({ children, modelSelection, chatSessionId, ini
             }
           }
 
-          yield { content: buildContent() }
+          yield { content: [...contentParts] }
         }
       }
 

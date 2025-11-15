@@ -23,9 +23,8 @@ export async function streamSessionText(
   // Initialize ChatSessionStore if we have a chat session ID
   const chatSessionStore = session.chatSessionId ? new ChatSessionStore(db) : null
 
-  // Accumulate message parts for persistence
-  const textChunks: string[] = []
-  const toolCalls: Array<{ toolCallId: string; toolName: string; input: unknown }> = []
+  // Accumulate message parts for persistence in streaming order
+  const persistedParts: AddMessageRequest['parts'] = []
   const toolResults: Array<{ toolCallId: string; toolName: string; output: unknown }> = []
 
   try {
@@ -76,19 +75,33 @@ export async function streamSessionText(
 
       // Handle different chunk types
       switch (chunk.type) {
-        case 'text-delta':
-          // Accumulate text for persistence
-          textChunks.push(chunk.text)
+        case 'text-delta': {
+          if (!chunk.text) {
+            break
+          }
+
+          const lastPart = persistedParts[persistedParts.length - 1]
+
+          if (lastPart?.kind === 'text') {
+            lastPart.content += chunk.text
+          } else {
+            persistedParts.push({
+              kind: 'text',
+              content: chunk.text
+            })
+          }
           // Send text chunks to renderer
           publishEvent('aiChatChunk', {
             type: EventType.Message,
             payload: { sessionId: session.id, chunk: chunk.text }
           })
           break
+        }
 
         case 'tool-call':
           // Accumulate tool call for persistence
-          toolCalls.push({
+          persistedParts.push({
+            kind: 'tool_invocation',
             toolCallId: chunk.toolCallId,
             toolName: chunk.toolName,
             input: chunk.input
@@ -155,36 +168,17 @@ export async function streamSessionText(
       // Save assistant message to database
       if (chatSessionStore && session.chatSessionId) {
         try {
-          const parts: AddMessageRequest['parts'] = []
-
-          // Add text part if there's any text
-          const fullText = textChunks.join('')
-          if (fullText) {
-            parts.push({
-              kind: 'text',
-              content: fullText
-            })
-          }
-
-          // Add tool invocation parts
-          for (const toolCall of toolCalls) {
-            parts.push({
-              kind: 'tool_invocation',
-              toolCallId: toolCall.toolCallId,
-              toolName: toolCall.toolName,
-              input: toolCall.input
-            })
-          }
-
           // Only save if there are parts
-          if (parts.length > 0) {
+          if (persistedParts.length > 0) {
             const messageRequest: AddMessageRequest = {
               sessionId: session.chatSessionId,
               role: 'assistant',
-              parts
+              parts: persistedParts
             }
             const messageId = await chatSessionStore.addMessage(messageRequest)
-            logger.info(`[DB] Assistant message saved: ${messageId} (${parts.length} parts)`)
+            logger.info(
+              `[DB] Assistant message saved: ${messageId} (${persistedParts.length} parts)`
+            )
 
             // Now that tool invocations are persisted, save their results
             for (const toolResult of toolResults) {
