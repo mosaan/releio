@@ -60,6 +60,20 @@ export class Server {
       return { action: 'deny' }
     })
 
+    this._mainWindow.webContents.on('will-navigate', (event, url) => {
+      // Allow internal navigation (file://, localhost), block external URLs
+      const isInternal =
+        url.startsWith('file://') ||
+        url.startsWith('http://localhost:') ||
+        url.startsWith('http://127.0.0.1:')
+
+      if (!isInternal) {
+        // Open external URLs in system browser
+        event.preventDefault()
+        shell.openExternal(url)
+      }
+    })
+
     // HMR for renderer base on electron-vite cli.
     // Load the remote URL for development or the local html file for production.
     if (process.env.NODE_ENV === 'development' && process.env['ELECTRON_RENDERER_URL']) {
