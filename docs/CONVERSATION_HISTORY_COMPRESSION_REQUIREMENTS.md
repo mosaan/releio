@@ -209,21 +209,11 @@ As a user, I want to manually compress conversation history at any time so that 
   - `isSummarized`: Boolean flag indicating if message is part of a summary (optional)
 
 #### 4.2 Summary Content Format
-- **FR-4.2.1**: Summary `contentJson` SHOULD follow this structure:
-  ```json
-  {
-    "summaryText": "Comprehensive summary of conversation...",
-    "messageRange": {
-      "firstMessageId": "uuid-1",
-      "lastMessageId": "uuid-2"
-    },
-    "compressionTimestamp": "2025-11-16T10:30:00Z",
-    "compressionType": "auto" | "manual",
-    "originalTokenCount": 50000,
-    "summaryTokenCount": 2000,
-    "messagesIncluded": 45
-  }
-  ```
+- **FR-4.2.1**: Summary `contentJson` MUST contain:
+  - `summaryText`: The generated summary text
+  - `messageRange`: Object tracking first and last message IDs included in the summary
+
+  Additional metadata (compression timestamp, type, token counts, etc.) MAY be included as implementation details.
 
 #### 4.3 Query Optimization
 - **FR-4.3.1**: The system MUST efficiently query messages for context construction:
@@ -248,9 +238,10 @@ As a user, I want to manually compress conversation history at any time so that 
 
 #### 5.2 Token Counting Failures
 - **FR-5.2.1**: If token counting fails, the system MUST:
-  - Log the error
-  - Use approximate counting (e.g., character count / 4 for English text)
-  - Proceed with more conservative compression threshold
+  - Log the error with full context
+  - Display error message to user
+  - Provide option to retry token counting
+  - NOT proceed with fallback counting methods (no approximate counting)
 
 #### 5.3 Insufficient Context After Compression
 - **FR-5.3.1**: If summary + retained messages still exceed context limit, the system SHOULD:
@@ -270,13 +261,13 @@ As a user, I want to manually compress conversation history at any time so that 
 - **FR-6.1.1**: The system SHOULD display current session context usage:
   - Token count bar or percentage indicator
   - Visual warning when approaching threshold (e.g., orange at 80%, red at 95%)
-- **FR-6.1.2**: Chat UI SHOULD indicate when a summary is present:
+- **FR-6.1.2**: Chat UI MAY indicate when a summary is present:
   - Collapsible "Summary" section at top of message list
   - Badge or icon showing summarized message count
 
 #### 6.2 Summary Viewing
-- **FR-6.2.1**: User SHOULD be able to view summaries inline in the chat interface
-- **FR-6.2.2**: Summaries SHOULD be visually distinct from regular messages (e.g., different background color)
+- **FR-6.2.1**: User MAY be able to view summaries inline in the chat interface
+- **FR-6.2.2**: Summaries MAY be visually distinct from regular messages (e.g., different background color)
 - **FR-6.2.3**: User MAY be able to expand/collapse summaries
 
 #### 6.3 History Access
@@ -290,11 +281,12 @@ As a user, I want to manually compress conversation history at any time so that 
 
 **Non-Functional Requirements:**
 
-- **NFR-7.1**: Token counting SHALL complete in < 500ms for conversations up to 1000 messages
-- **NFR-7.2**: Summarization SHALL complete in < 10 seconds for conversations up to 1000 messages
-- **NFR-7.3**: Context construction SHALL complete in < 100ms
-- **NFR-7.4**: Database queries for message retrieval SHALL be optimized with indexes
-- **NFR-7.5**: Token counting SHALL be performed asynchronously to avoid blocking UI
+- **NFR-7.1**: Token counting SHALL complete in < 500ms for conversations up to 100,000 tokens
+- **NFR-7.2**: Context construction SHALL complete in < 100ms
+- **NFR-7.3**: Database queries for message retrieval SHALL be optimized with indexes
+- **NFR-7.4**: Token counting SHALL be performed asynchronously to avoid blocking UI
+
+**Note:** Summarization performance depends on external AI provider and cannot be specified as a hard requirement.
 
 ## Open Questions and Considerations
 
@@ -539,10 +531,19 @@ Conversation:
 
 ---
 
-**Document Version:** 1.3
+**Document Version:** 1.4
 **Last Updated:** 2025-11-16
 **Author:** Claude Code Agent
 **Status:** Requirements Finalized - Ready for Implementation
+
+**Changes in v1.4:**
+- **FR-4.2.1**: Simplified summary content format to essential fields only (summaryText + messageRange)
+- **FR-5.2.1**: Removed fallback counting methods; token counting failures now require user retry
+- **FR-6.1.2**: Downgraded summary presence indicators from SHOULD to MAY
+- **FR-6.2.1-6.2.3**: Downgraded summary viewing features from SHOULD to MAY
+- **NFR-7.1**: Changed performance criteria from message count to token count (100K tokens)
+- **NFR-7.2**: Removed summarization performance requirement (external dependency)
+- Renumbered NFR-7.x to reflect deletion
 
 **Changes in v1.3:**
 - Changed modal verbs from SHALL to MUST/SHOULD/MAY per RFC 2119
