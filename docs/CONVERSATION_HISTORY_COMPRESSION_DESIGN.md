@@ -251,7 +251,7 @@ interface ModelContextConfig {
     apiEndpoint?: string;       // For API-based
   };
   defaultCompressionThreshold: number; // Percentage (0-1)
-  recommendedRetentionMessages: number;
+  recommendedRetentionTokens: number;  // Tokens to preserve for recent messages
 }
 
 class ModelConfigRegistry {
@@ -265,7 +265,7 @@ class ModelConfigRegistry {
       tokenizerType: 'tiktoken',
       tokenizerConfig: { encoding: 'o200k_base' },
       defaultCompressionThreshold: 0.95,
-      recommendedRetentionMessages: 10,
+      recommendedRetentionTokens: 1000,
     }],
     ['openai:gpt-4o-mini', {
       provider: 'openai',
@@ -275,7 +275,7 @@ class ModelConfigRegistry {
       tokenizerType: 'tiktoken',
       tokenizerConfig: { encoding: 'o200k_base' },
       defaultCompressionThreshold: 0.95,
-      recommendedRetentionMessages: 10,
+      recommendedRetentionTokens: 1000,
     }],
     ['openai:gpt-4-turbo', {
       provider: 'openai',
@@ -285,7 +285,7 @@ class ModelConfigRegistry {
       tokenizerType: 'tiktoken',
       tokenizerConfig: { encoding: 'cl100k_base' },
       defaultCompressionThreshold: 0.95,
-      recommendedRetentionMessages: 10,
+      recommendedRetentionTokens: 1000,
     }],
     ['openai:gpt-4', {
       provider: 'openai',
@@ -295,7 +295,7 @@ class ModelConfigRegistry {
       tokenizerType: 'tiktoken',
       tokenizerConfig: { encoding: 'cl100k_base' },
       defaultCompressionThreshold: 0.95,
-      recommendedRetentionMessages: 8,
+      recommendedRetentionTokens: 800,
     }],
     ['openai:gpt-3.5-turbo', {
       provider: 'openai',
@@ -305,7 +305,7 @@ class ModelConfigRegistry {
       tokenizerType: 'tiktoken',
       tokenizerConfig: { encoding: 'cl100k_base' },
       defaultCompressionThreshold: 0.95,
-      recommendedRetentionMessages: 10,
+      recommendedRetentionTokens: 1000,
     }],
 
     // Anthropic models
@@ -316,7 +316,7 @@ class ModelConfigRegistry {
       maxOutputTokens: 8192,
       tokenizerType: 'anthropic-api',
       defaultCompressionThreshold: 0.95,
-      recommendedRetentionMessages: 15,
+      recommendedRetentionTokens: 1500,
     }],
     ['anthropic:claude-3-opus-20240229', {
       provider: 'anthropic',
@@ -325,7 +325,7 @@ class ModelConfigRegistry {
       maxOutputTokens: 4096,
       tokenizerType: 'anthropic-api',
       defaultCompressionThreshold: 0.95,
-      recommendedRetentionMessages: 15,
+      recommendedRetentionTokens: 1500,
     }],
     ['anthropic:claude-3-haiku-20240307', {
       provider: 'anthropic',
@@ -334,7 +334,7 @@ class ModelConfigRegistry {
       maxOutputTokens: 4096,
       tokenizerType: 'anthropic-api',
       defaultCompressionThreshold: 0.95,
-      recommendedRetentionMessages: 15,
+      recommendedRetentionTokens: 1500,
     }],
 
     // Google models
@@ -345,7 +345,7 @@ class ModelConfigRegistry {
       maxOutputTokens: 65535,
       tokenizerType: 'gemini-api',
       defaultCompressionThreshold: 0.98, // Higher threshold due to massive context
-      recommendedRetentionMessages: 20,
+      recommendedRetentionTokens: 2000,
     }],
     ['google:gemini-2.5-flash', {
       provider: 'google',
@@ -354,7 +354,7 @@ class ModelConfigRegistry {
       maxOutputTokens: 65535,
       tokenizerType: 'gemini-api',
       defaultCompressionThreshold: 0.98,
-      recommendedRetentionMessages: 20,
+      recommendedRetentionTokens: 2000,
     }],
   ]);
 
@@ -386,7 +386,7 @@ interface CompressionOptions {
   provider: string;
   model: string;
   apiKey?: string;
-  retentionMessageCount?: number; // Override default
+  retentionTokenCount?: number; // Override default retention token budget
   force?: boolean; // For manual compression
 }
 
@@ -406,6 +406,7 @@ interface ContextCheckResult {
   contextLimit: number;
   thresholdTokenCount: number;
   utilizationPercentage: number;
+  retentionTokenBudget: number;
   retainedMessageCount: number;
   compressibleMessageCount: number;
 }
@@ -506,9 +507,23 @@ async checkContext(
   const thresholdTokenCount = Math.floor(availableForContext * threshold);
   const needsCompression = tokenCount.totalTokens > thresholdTokenCount;
 
-  // 9. Calculate compressible messages
-  const retentionCount = modelConfig.recommendedRetentionMessages;
-  const compressibleCount = Math.max(0, contextMessages.length - retentionCount);
+  // 9. Calculate retention boundary based on token budget
+  const retentionTokenBudget = modelConfig.recommendedRetentionTokens;
+
+  // Count tokens from most recent messages backwards until budget is exhausted
+  let retainedTokens = 0;
+  let retainedMessageCount = 0;
+  for (let i = contextMessages.length - 1; i >= 0; i--) {
+    const messageTokens = await this.tokenCounter.countMessageTokens(contextMessages[i]);
+    if (retainedTokens + messageTokens <= retentionTokenBudget) {
+      retainedTokens += messageTokens;
+      retainedMessageCount++;
+    } else {
+      break;
+    }
+  }
+
+  const compressibleMessageCount = Math.max(0, contextMessages.length - retainedMessageCount);
 
   return {
     needsCompression,
@@ -516,13 +531,14 @@ async checkContext(
     contextLimit: availableForContext,
     thresholdTokenCount,
     utilizationPercentage: tokenCount.totalTokens / availableForContext,
-    retainedMessageCount: retentionCount,
-    compressibleMessageCount: compressibleCount,
+    retentionTokenBudget,
+    retainedMessageCount,
+    compressibleMessageCount,
   };
 }
 
 async autoCompress(options: CompressionOptions): Promise<CompressionResult> {
-  const { sessionId, provider, model, retentionMessageCount } = options;
+  const { sessionId, provider, model, retentionTokenCount } = options;
 
   // 1. Get model config
   const modelConfig = ModelConfigRegistry.getConfig(provider, model);
@@ -534,10 +550,24 @@ async autoCompress(options: CompressionOptions): Promise<CompressionResult> {
   const session = await this.sessionStore.getSession(sessionId);
   const messages = session.messages;
 
-  // 3. Determine retention boundary
-  const retentionCount = retentionMessageCount ?? modelConfig.recommendedRetentionMessages;
-  if (messages.length <= retentionCount) {
-    // Not enough messages to compress
+  // 3. Determine retention boundary based on token budget
+  const retentionTokenBudget = retentionTokenCount ?? modelConfig.recommendedRetentionTokens;
+
+  // Count tokens from most recent messages backwards until budget is exhausted
+  let retainedTokens = 0;
+  let retainedMessageCount = 0;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const messageTokens = await this.tokenCounter.countMessageTokens(messages[i]);
+    if (retainedTokens + messageTokens <= retentionTokenBudget) {
+      retainedTokens += messageTokens;
+      retainedMessageCount++;
+    } else {
+      break;
+    }
+  }
+
+  // Not enough tokens to compress (all messages fit within retention budget)
+  if (retainedMessageCount >= messages.length) {
     return {
       compressed: false,
       originalTokenCount: 0,
@@ -547,7 +577,7 @@ async autoCompress(options: CompressionOptions): Promise<CompressionResult> {
   }
 
   // 4. Split messages: to-compress vs. to-retain
-  const splitIndex = messages.length - retentionCount;
+  const splitIndex = messages.length - retainedMessageCount;
   const messagesToCompress = messages.slice(0, splitIndex);
   const messagesToRetain = messages.slice(splitIndex);
 
@@ -696,9 +726,10 @@ private getSummarizationPrompt(conversationText: string): string {
 1. Preserve all key facts, decisions, and important context
 2. Maintain chronological order of significant events
 3. Keep technical details, code examples, and specific implementation decisions
-4. Use concise language to maximize information density
-5. Focus on actionable information and outcomes
-6. Omit pleasantries, greetings, and off-topic discussions
+4. Include information about tool invocations and their results (e.g., file operations, API calls, database queries)
+5. Use concise language to maximize information density
+6. Focus on actionable information and outcomes
+7. Omit pleasantries, greetings, and off-topic discussions
 
 **Conversation History:**
 ${conversationText}
@@ -716,6 +747,9 @@ Please provide a summary in the following format:
 
 ## Technical Details
 [Code snippets, commands, configurations, or technical specifications discussed]
+
+## Tool Invocations
+[Significant tool calls made (file operations, searches, API calls) and their outcomes]
 
 ## Decisions and Outcomes
 [Agreements reached, decisions made, next steps identified]
@@ -1378,11 +1412,37 @@ describe('Compression Integration', () => {
 3. Performance optimization
 4. Beta testing
 
+## Implementation Decisions
+
+### ✅ RESOLVED: Multi-Level Compression Strategy
+**Decision:** Multi-level compression is REQUIRED. When a second compression is needed, the system SHALL include the previous summary plus subsequent messages as input for the new summary. This creates a cascading summary chain without depth limits.
+
+**Implementation:** See `autoCompress` method lines 584-593 for logic that checks for existing summaries and includes them in re-summarization.
+
+### ✅ RESOLVED: Token Counting for Tool Calls and Attachments
+**Decision:**
+- Tool invocations: Count tokens by tokenizing JSON input and output using the model's tokenization method
+- Attachments: Count metadata only (filename, MIME type, size in bytes) - not the actual content
+- This aligns with how providers actually count tokens for these elements
+
+**Implementation:** Token counting in `TokenCounter` service should serialize tool call JSON and count those tokens.
+
+### ✅ RESOLVED: Message Retention Strategy
+**Decision:** Retention is based on TOKEN COUNT, not message count. The system retains the maximum number of recent messages that fit within a configurable token budget (default: 1000 tokens).
+
+**Example:** If retention budget is 1000 tokens, and the most recent 3 messages total 900 tokens while 4 messages total 1100 tokens, retain 3 messages.
+
+**Implementation:** See `checkContext` (lines 510-537) and `autoCompress` (lines 553-582) for token-based retention logic.
+
+### ✅ RESOLVED: Message Pinning
+**Decision:** Message pinning is NOT in scope for the current implementation. This feature will not be developed at this time.
+
 ## Open Implementation Questions
 
 ### 1. Should we cache tokenizer instances?
 **Context:** Creating tiktoken encodings has overhead.
 **Proposal:** Singleton pattern for tokenizers per model.
+**Status:** To be decided during implementation.
 
 ### 2. How to handle token counting failures gracefully?
 **Options:**
@@ -1391,6 +1451,7 @@ describe('Compression Integration', () => {
 - C) User choice in settings
 
 **Recommendation:** B with warning notification.
+**Status:** To be decided during implementation.
 
 ### 3. Should summaries be editable by users?
 **Consideration:** Users may want to correct or enhance summaries.
@@ -1403,6 +1464,6 @@ describe('Compression Integration', () => {
 
 ---
 
-**Document Version:** 1.0
+**Document Version:** 1.1
 **Last Updated:** 2025-11-16
-**Status:** Draft for Review
+**Status:** Requirements Clarified - Ready for Implementation
