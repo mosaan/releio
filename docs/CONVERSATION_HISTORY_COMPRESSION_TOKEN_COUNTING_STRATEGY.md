@@ -110,11 +110,17 @@ This approach balances **simplicity and practicality**. Since the purpose is thr
 - ✅ **Migration-friendly**: Works with existing messages
 
 **Cons:**
-- ⚠️ Mixed accuracy (exact for recorded, approximate for fallback)
-- ⚠️ Requires storing token counts in DB (but fields already exist)
+- ❌ **Fatal flaw: Token counts unavailable when needed**
+  - Compression decisions must be made **before** sending requests to AI providers
+  - API responses only return token counts **after** the request completes
+  - Cannot determine "should we compress?" without knowing current + new message token count
+- ❌ **API response token counts are cumulative**, not per-message
+  - `promptTokens` includes the entire conversation history, system messages, tool definitions, etc.
+  - Cannot extract individual message token counts from these cumulative values
+  - Recorded values cannot be used to calculate context consumption accurately
 
 **Evaluation:**
-This is the **best of both worlds**: precise when possible, practical when not.
+**REJECTED.** While elegant in theory, this approach has fundamental timing and data granularity issues that make it unsuitable for compression decision-making.
 
 ---
 
@@ -139,29 +145,53 @@ This is the **best of both worlds**: precise when possible, practical when not.
 
 ## Decision
 
-### Selected Approach: **Alternative 3 - Hybrid (Record + Fallback)**
+### Selected Approach: **Alternative 2 - Universal tiktoken o200k_base**
 
 **Implementation:**
 
 ```typescript
-function getMessageTokenCount(message: ChatMessage, tokenCounter: TiktokenCounter): number {
-  // 1. Priority: Use recorded tokens if available
-  if (message.inputTokens != null || message.outputTokens != null) {
-    return (message.inputTokens ?? 0) + (message.outputTokens ?? 0);
+import { get_encoding } from 'tiktoken';
+
+class TokenCounter {
+  private encoding: Tiktoken;
+
+  constructor() {
+    this.encoding = get_encoding('o200k_base');
   }
 
-  // 2. Fallback: Calculate using tiktoken o200k_base
-  return tokenCounter.count(message);
+  countMessageTokens(message: ChatMessage): number {
+    // Always calculate locally - no hybrid logic
+    return this.calculateTokens(message);
+  }
+
+  private calculateTokens(message: ChatMessage): number {
+    let tokenCount = 4; // Message overhead
+
+    for (const part of message.parts) {
+      if (part.kind === 'text' && part.content) {
+        tokenCount += this.encoding.encode(part.content).length;
+      }
+      // ... handle tool calls, attachments, etc.
+    }
+
+    return tokenCount;
+  }
+
+  dispose() {
+    this.encoding.free();
+  }
 }
 ```
 
-**Fallback Tokenizer: tiktoken o200k_base**
+**Tokenizer Choice: tiktoken o200k_base (recommended, not mandatory)**
 
 Chosen over cl100k_base because:
 1. **Current mainstream**: GPT-4o is now the primary OpenAI model
 2. **Efficiency**: o200k_base uses fewer tokens → conservative estimates at 95% threshold
 3. **Future-proof**: Newer encoding likely to remain relevant
 4. **Similar Claude/Gemini accuracy**: Both cl100k_base and o200k_base have ±10-15% error with other providers
+
+**Note:** Alternative tokenizers MAY be used if they provide better accuracy or performance.
 
 ---
 
@@ -175,62 +205,66 @@ The **goal is threshold detection, not billing accuracy**.
 - **API calls add latency**: 100-300ms per request for Anthropic/Gemini
 - **Network failures**: Requires fallback logic anyway
 - **Complexity**: 3x the code, testing, and maintenance
+- **Still need local calculation**: Even with API-based counting, we need local calculation for the current user input before sending
 
-### Why Hybrid Approach?
+### Why Not Hybrid Approach (Recorded + Fallback)?
 
-1. **Best effort**: Uses exact data when available (from AI responses)
-2. **Practical fallback**: tiktoken o200k_base is fast, free, and "good enough"
-3. **Graceful degradation**: Always works, even without network or records
-4. **Implementation simplicity**: One fallback tokenizer, minimal code
+While initially attractive, this approach has **fundamental flaws**:
 
-### Why tiktoken o200k_base?
+1. **Timing problem**: Compression decisions must happen **before** sending requests
+   - We need token counts to decide: "Should we compress before sending this message?"
+   - API responses return token counts **after** the request completes
+   - By then, it's too late to make compression decisions
 
-- **GPT-4o mainstream**: Current and future OpenAI models
+2. **Granularity problem**: API response token counts are cumulative
+   - `usage.promptTokens` includes entire history + system messages + tool definitions + current input
+   - We cannot extract individual message token counts from these cumulative values
+   - Cannot use recorded values to calculate "how many tokens does message X consume?"
+
+3. **Still need local calculation**: Even with recorded values, we must calculate locally for:
+   - Current user input (before sending)
+   - New messages (before API response)
+   - Compression decision-making
+
+**Conclusion:** Since local calculation is always required, hybrid approach adds complexity without meaningful benefit.
+
+### Why Universal tiktoken o200k_base?
+
+- **Always available**: Works before and after API calls, no network dependency
+- **Fast**: Local processing, no latency
+- **Free**: No additional API costs
+- **Simple**: Single tokenizer implementation, easy to maintain
+- **Good enough**: ±10-15% error is acceptable for 95% threshold detection
 - **Conservative**: Fewer tokens → triggers compression slightly earlier (safer)
-- **Acceptable accuracy**: ±10-15% error is fine for 95% threshold detection
-- **Research basis**: Claude has 70% vocabulary overlap with GPT-4 tokenizers
+- **Acceptable accuracy**: Research shows Claude has 70% vocabulary overlap with GPT-4 tokenizers
 
 ### Accuracy Expectations
 
 | Provider | Method | Expected Accuracy |
 |----------|--------|-------------------|
-| OpenAI GPT-4o | Recorded from response | **100%** (exact) |
 | OpenAI GPT-4o | tiktoken o200k_base | **100%** (exact) |
 | OpenAI GPT-4 | tiktoken o200k_base | **~98%** (slightly off) |
-| Anthropic Claude | Recorded from response | **100%** (exact) |
+| OpenAI GPT-3.5 | tiktoken o200k_base | **~98%** (slightly off) |
 | Anthropic Claude | tiktoken o200k_base | **85-90%** (±10-15%) |
-| Google Gemini | Recorded from response | **100%** (exact) |
 | Google Gemini | tiktoken o200k_base | **85-90%** (±10-15%) |
+| Azure OpenAI | tiktoken o200k_base | **100%** (exact for GPT-4o) |
 
-**Conclusion**: With 95% threshold and ±15% worst-case error, compression triggers between 80-110% of actual threshold. This is acceptable given the 5% safety margin.
+**Practical Impact:**
+- ±10-15% error is acceptable because:
+  - 95% threshold provides 5% buffer
+  - Safety margin (additional 5%) provides another 5% buffer
+  - Total buffer: ~10% before hitting hard context limits
+  - Conservative tokenizer (o200k_base uses fewer tokens) triggers compression slightly earlier
+- With 95% threshold and ±15% worst-case error, compression triggers between 80-110% of actual threshold
+- This is acceptable and safe given the built-in safety margins
 
 ---
 
 ## Implementation Requirements
 
-### 1. Record Token Counts from AI Responses
+### 1. Implement Local Token Counter
 
-**When:** After every AI request completes
-
-**Where:** `src/backend/ai/stream.ts` or `src/renderer/src/components/AIRuntimeProvider.tsx`
-
-**What to store:**
-```typescript
-// AI SDK response includes:
-const { usage } = result;
-// usage.promptTokens - tokens in the request
-// usage.completionTokens - tokens in the response
-
-// Store in database:
-await db.update(chatMessages)
-  .set({
-    inputTokens: usage.promptTokens,
-    outputTokens: usage.completionTokens
-  })
-  .where(eq(chatMessages.id, messageId));
-```
-
-### 2. Implement Fallback Token Counter
+**Where:** `src/backend/compression/TokenCounter.ts`
 
 **Dependencies:**
 ```json
@@ -288,17 +322,29 @@ class TiktokenCounter {
 }
 ```
 
-### 3. Simplify TokenCounter Service
+### 2. Optional: Record API Response Token Counts
 
-**Remove:**
-- Anthropic-specific API token counting
-- Gemini-specific API token counting
-- Provider-specific implementations
+**Purpose:** Analytics and performance monitoring only (NOT for compression decisions)
 
-**Keep:**
-- Single tiktoken o200k_base implementation
-- Message token counting logic
-- Conversation token aggregation
+**When:** After every AI request completes
+
+**Where:** `src/backend/ai/stream.ts`
+
+**What to store:**
+```typescript
+// AI SDK response includes:
+const { usage } = result;
+
+// MAY store in database for monitoring:
+await db.update(chatMessages)
+  .set({
+    inputTokens: usage.promptTokens,  // Cumulative count (for reference only)
+    outputTokens: usage.completionTokens  // For reference only
+  })
+  .where(eq(chatMessages.id, messageId));
+```
+
+**Note:** These values are cumulative and MUST NOT be used for compression logic.
 
 ---
 
@@ -306,38 +352,40 @@ class TiktokenCounter {
 
 ### Metrics to Track
 
-1. **Token count accuracy** (when using fallback):
-   - Compare fallback counts with actual API usage
-   - Log discrepancies > 20%
+1. **Compression trigger accuracy**:
+   - False positives: Compressed but not near limit (acceptable, better safe than sorry)
+   - False negatives: Hit limit without compression (critical issue to investigate)
 
-2. **Fallback usage rate**:
-   - % of messages using fallback vs. recorded counts
-   - Should decrease over time as more messages are recorded
+2. **Token count validation** (optional, development only):
+   - Compare local counts with API response cumulative counts
+   - Log large discrepancies for investigation
+   - Expected: Some discrepancy due to system messages, tool definitions, and message overhead
 
-3. **Compression trigger accuracy**:
-   - False positives: Compressed but not near limit
-   - False negatives: Hit limit without compression (most critical)
-
-### Validation During Development
+### Validation During Development (Optional)
 
 ```typescript
-// When recording tokens, compare with fallback for debugging
-if (import.meta.env.DEV) {
-  const recordedTokens = usage.promptTokens + usage.completionTokens;
-  const fallbackTokens = tiktokenCounter.count(message);
-  const errorPercent = Math.abs(recordedTokens - fallbackTokens) / recordedTokens * 100;
+// Compare local calculation with API response for debugging
+if (import.meta.env.DEV && usage) {
+  const localTokens = tokenCounter.countConversationTokens(messages).totalTokens;
+  const apiTokens = usage.promptTokens;
+  const diff = Math.abs(localTokens - apiTokens);
+  const errorPercent = (diff / apiTokens) * 100;
 
   if (errorPercent > 20) {
-    logger.warn('High token count discrepancy', {
+    logger.debug('Token count discrepancy (expected)', {
       provider,
       model,
-      recordedTokens,
-      fallbackTokens,
-      errorPercent
+      local: localTokens,
+      api: apiTokens,
+      difference: diff,
+      errorPercent: errorPercent.toFixed(1) + '%',
+      note: 'API tokens include system messages, tool definitions, and formatting overhead'
     });
   }
 }
 ```
+
+**Note:** Discrepancies are expected and normal. API counts include overhead not present in our simplified local calculation.
 
 ---
 
@@ -345,19 +393,26 @@ if (import.meta.env.DEV) {
 
 ### If Accuracy Becomes Critical
 
-If future requirements demand higher accuracy:
-1. **Phase 1 (current)**: Hybrid with tiktoken o200k_base fallback
-2. **Phase 2 (if needed)**: Add provider-specific fallbacks
-   - Still use recorded tokens as priority
-   - Fallback to provider-specific API only when needed
-   - Cache API results to minimize calls
+If future requirements demand higher accuracy for non-OpenAI providers:
+
+**Option 1: Provider-Specific Tokenizers**
+- Implement Anthropic/Gemini tokenizers if they become available as offline libraries
+- Still requires local calculation (cannot use API calls before request)
+- Increases complexity but improves accuracy
+
+**Option 2: Better Universal Tokenizers**
+- Research and adopt newer universal tokenizers with better cross-provider accuracy
+- Example: Future BPE encodings designed for multi-provider support
+
+**Current Assessment:** Not needed. ±10-15% error is acceptable for threshold detection.
 
 ### If New Providers Are Added
 
 For new AI providers:
-1. Check if provider returns token counts in response → use recorded tokens
-2. If not, tiktoken o200k_base fallback remains valid
-3. Monitor accuracy and adjust if needed
+1. Default to tiktoken o200k_base (simple, fast, good enough)
+2. Monitor compression trigger accuracy
+3. If critical issues arise, investigate provider-specific tokenization
+4. Prefer local calculation methods over API calls
 
 ---
 
@@ -368,6 +423,25 @@ For new AI providers:
 - [OpenAI tiktoken GitHub](https://github.com/openai/tiktoken)
 - [Anthropic Token Counting (2025)](https://www.propelcode.ai/blog/token-counting-tiktoken-anthropic-gemini-guide-2025)
 - [GPT-4o vs GPT-4 Tokenization](https://github.com/kaisugi/gpt4_vocab_list)
+
+---
+
+**Document Version:** 2.0
+**Last Updated:** 2025-11-16
+**Status:** Final - Reflects Local-Only Token Counting Approach
+
+**Changes in v2.0:**
+- **Alternative 3 (Hybrid)**: Added fatal flaws and marked as REJECTED
+  - Token counts unavailable before sending requests
+  - API response tokens are cumulative, not per-message
+- **Decision**: Changed from Alternative 3 (Hybrid) to Alternative 2 (Universal tiktoken)
+- **Implementation**: Removed hybrid logic; always calculate locally
+- **Rationale**: Added "Why Not Hybrid Approach?" section with detailed explanation
+- **Monitoring**: Updated to reflect local-only approach
+- **Future Considerations**: Removed hybrid-related content
+
+**Changes in v1.0:**
+- Initial version documenting hybrid approach decision
 
 ### Key Findings
 

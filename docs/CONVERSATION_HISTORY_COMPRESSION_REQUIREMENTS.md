@@ -67,18 +67,23 @@ As a user engaged in a long conversation, I want the system to automatically man
 
 #### 1.1 Token Counting
 - **FR-1.1.1**: The system MUST calculate total token count of conversation history before each AI request
-- **FR-1.1.2**: Token counting MUST use a **hybrid approach** for practical accuracy:
-  - **Priority**: Use recorded token counts from AI response `usage` field (stored in `inputTokens`, `outputTokens`)
-  - **Fallback**: Use tiktoken o200k_base for local calculation when no record exists
-  - **Rationale**: See `CONVERSATION_HISTORY_COMPRESSION_TOKEN_COUNTING_STRATEGY.md` for detailed design decision
-- **FR-1.1.3**: Token count MUST include:
+- **FR-1.1.2**: Token counting MUST be performed **locally** for all compression decisions:
+  - All message token counts MUST be calculated locally before sending requests to AI providers
+  - This is essential because token counts are needed before sending requests (to determine if compression is needed)
+  - API response token counts are cumulative and cannot be used to calculate individual message sizes
+- **FR-1.1.3**: The system SHOULD use tiktoken with `o200k_base` encoding as the tokenizer
+  - Alternative tokenizers MAY be used if they provide comparable or better accuracy
+  - The tokenizer choice SHOULD be documented in implementation
+- **FR-1.1.4**: Token count MUST include:
   - User messages (all parts: text content)
   - Assistant messages (all parts: text content)
   - Tool invocations (JSON input and output, serialized then tokenized)
   - Attachment metadata (filename, MIME type, size - but not content)
   - System messages (if any)
   - Current user input being sent
-- **FR-1.1.4**: The system MUST persist token counts from AI responses in `chatMessages.inputTokens` and `chatMessages.outputTokens` fields after every AI request
+- **FR-1.1.5**: The system MAY persist token counts from AI responses in `chatMessages.inputTokens` and `chatMessages.outputTokens` fields for monitoring and analytics purposes
+  - These recorded values MUST NOT be used for compression decision-making
+  - They serve only as reference data for performance monitoring
 
 #### 1.2 Compression Trigger
 - **FR-1.2.1**: Compression MUST trigger automatically when total conversation token count exceeds a **configurable threshold percentage** of the model's context window
@@ -183,14 +188,12 @@ As a user, I want to manually compress conversation history at any time so that 
   - Default retention token count
 - **FR-3.2.2**: Configuration SHOULD be updateable as new models are released
 
-**Note:** Tokenization method is not model-specific; all models use tiktoken o200k_base as the universal fallback tokenizer.
-
 #### 3.3 Tokenization Library Management
-- **FR-3.3.1**: The system MAY use `tiktoken` library with `o200k_base` encoding as the standard fallback tokenizer
-  - This is the currently recommended choice based on analysis in `CONVERSATION_HISTORY_COMPRESSION_TOKEN_COUNTING_STRATEGY.md`
+- **FR-3.3.1**: The system SHOULD use `tiktoken` library with `o200k_base` encoding as the standard tokenizer
   - Fast, local processing without API calls
+  - Provides reasonable accuracy across different AI providers (±10-15% for non-OpenAI models)
   - Alternative tokenizers MAY be used if they provide better accuracy or performance
-- **FR-3.3.2**: The system MUST handle tokenization errors gracefully (e.g., fallback to character-based estimation if the primary tokenizer fails)
+- **FR-3.3.2**: The system MUST handle tokenization errors according to FR-5.2.1 (display error and allow retry; no fallback methods)
 
 ### 4. Data Model and Persistence
 
@@ -438,45 +441,23 @@ As a user, I want to manually compress conversation history at any time so that 
 - [AI Provider Factory](../src/backend/ai/factory.ts)
 - [AI Streaming Implementation](../src/backend/ai/stream.ts)
 
-## Appendix A: Token Counting Implementation Examples
+## Appendix A: Token Counting Implementation Example
 
-### OpenAI (tiktoken)
+### Local Token Counting with tiktoken (Recommended)
 ```typescript
-import { encoding_for_model } from 'tiktoken';
+import { get_encoding } from 'tiktoken';
 
-function countTokensOpenAI(text: string, model: string): number {
-  const encoding = encoding_for_model(model);
+function countTokens(text: string): number {
+  // Use o200k_base encoding (recommended for all providers)
+  const encoding = get_encoding('o200k_base');
   const tokens = encoding.encode(text);
-  encoding.free();
-  return tokens.length;
+  const count = tokens.length;
+  encoding.free(); // Clean up resources
+  return count;
 }
 ```
 
-### Anthropic (API-based)
-```typescript
-import Anthropic from '@anthropic-ai/sdk';
-
-async function countTokensAnthropic(messages: any[]): Promise<number> {
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-  const response = await client.messages.countTokens({
-    model: 'claude-3-5-sonnet-20241022',
-    messages: messages,
-  });
-  return response.input_tokens;
-}
-```
-
-### Google Gemini (API-based)
-```typescript
-import { GoogleGenerativeAI } from '@google/generative-ai';
-
-async function countTokensGemini(text: string): Promise<number> {
-  const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-  const result = await model.countTokens(text);
-  return result.totalTokens;
-}
-```
+**Note:** This provides ±10-15% accuracy for non-OpenAI models, which is acceptable given the 95% threshold and safety margins built into the compression system.
 
 ## Appendix B: Summarization Prompt Template
 
@@ -531,10 +512,21 @@ Conversation:
 
 ---
 
-**Document Version:** 1.4
+**Document Version:** 1.5
 **Last Updated:** 2025-11-16
 **Author:** Claude Code Agent
 **Status:** Requirements Finalized - Ready for Implementation
+
+**Changes in v1.5:**
+- **FR-1.1.2**: Removed hybrid approach; token counting MUST always be performed locally
+- **FR-1.1.3**: Changed tiktoken o200k_base from MAY to SHOULD (recommended but not mandatory)
+- **FR-1.1.4**: Renumbered from FR-1.1.3 (token count inclusion requirements)
+- **FR-1.1.5**: API response token counts are now MAY (for monitoring only, not compression decisions)
+- **FR-3.2.1 Note**: Removed (redundant after hybrid approach removal)
+- **FR-3.3.1**: Changed from MAY to SHOULD for tiktoken o200k_base
+- **FR-3.3.2**: Updated to reference FR-5.2.1 for error handling (no fallback methods)
+- **Appendix A**: Removed provider-specific API examples; kept only local tiktoken example
+- **Rationale**: API response token counts are cumulative and unavailable before sending requests, making them unsuitable for compression decisions
 
 **Changes in v1.4:**
 - **FR-4.2.1**: Simplified summary content format to essential fields only (summaryText + messageRange)
