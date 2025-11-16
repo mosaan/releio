@@ -65,9 +65,11 @@ Following the application's existing pattern:
 **Location:** `src/backend/compression/TokenCounter.ts`
 
 **Responsibilities:**
-- Count tokens for messages using provider-specific methods
-- Cache token counts to avoid redundant calculations
-- Handle fallback counting when API/library unavailable
+- Count tokens using hybrid approach: recorded tokens (priority) + tiktoken fallback
+- Provide fast, local token counting without API calls
+- Handle message parts (text, tool calls, attachments)
+
+**Design Decision:** See `CONVERSATION_HISTORY_COMPRESSION_TOKEN_COUNTING_STRATEGY.md` for detailed rationale.
 
 **Interface:**
 ```typescript
@@ -78,79 +80,133 @@ interface TokenCountResult {
   estimatedResponseTokens: number;
 }
 
-interface TokenCounterConfig {
-  provider: 'openai' | 'anthropic' | 'google' | 'azure';
-  model: string;
-  apiKey?: string;
-}
-
 class TokenCounter {
-  constructor(config: TokenCounterConfig);
+  private encoding: Tiktoken; // o200k_base encoding
+
+  constructor();
 
   /**
-   * Count tokens for a single message
+   * Count tokens for a single message (hybrid approach)
+   * - Uses recorded tokens if available (inputTokens + outputTokens)
+   * - Falls back to tiktoken o200k_base calculation
    */
-  async countMessageTokens(message: ChatMessage): Promise<number>;
+  countMessageTokens(message: ChatMessage): number;
 
   /**
    * Count tokens for an array of messages
    */
-  async countConversationTokens(messages: ChatMessage[]): Promise<TokenCountResult>;
+  countConversationTokens(messages: ChatMessage[]): TokenCountResult;
 
   /**
-   * Get model's context window configuration
+   * Count tokens for raw text (fallback method)
    */
-  getModelConfig(): ModelContextConfig;
+  countText(text: string): number;
 
   /**
-   * Estimate tokens without API call (fallback)
+   * Clean up resources
    */
-  estimateTokens(text: string): number;
+  dispose(): void;
 }
 ```
 
 **Implementation Details:**
 
-#### OpenAI Token Counting
-```typescript
-import { encoding_for_model, get_encoding } from 'tiktoken';
+#### Hybrid Token Counting (Single Implementation)
 
-class OpenAITokenCounter {
+```typescript
+import { get_encoding, type Tiktoken } from 'tiktoken';
+
+class TokenCounter {
   private encoding: Tiktoken;
 
-  constructor(model: string) {
-    // Map model to appropriate encoding
-    const encodingMap: Record<string, string> = {
-      'gpt-4o': 'o200k_base',
-      'gpt-4o-mini': 'o200k_base',
-      'gpt-4-turbo': 'cl100k_base',
-      'gpt-4': 'cl100k_base',
-      'gpt-3.5-turbo': 'cl100k_base',
-    };
-
-    const encodingName = encodingMap[model] || 'cl100k_base';
-    this.encoding = get_encoding(encodingName);
+  constructor() {
+    // Use o200k_base as universal fallback tokenizer
+    this.encoding = get_encoding('o200k_base');
   }
 
-  countTokens(text: string): number {
-    const tokens = this.encoding.encode(text);
-    return tokens.length;
-  }
-
-  countMessageTokens(message: AIMessage): number {
-    // Format: <|im_start|>role\ncontent<|im_end|>
-    let count = 4; // Message overhead
-    count += this.countTokens(message.role);
-    count += this.countTokens(message.content);
-
-    // Add tokens for tool calls if present
-    if (message.tool_calls) {
-      message.tool_calls.forEach(tc => {
-        count += this.countTokens(JSON.stringify(tc));
-      });
+  /**
+   * Count tokens for a single message (hybrid approach)
+   */
+  countMessageTokens(message: ChatMessage): number {
+    // Priority: Use recorded tokens if available
+    if (message.inputTokens != null || message.outputTokens != null) {
+      return (message.inputTokens ?? 0) + (message.outputTokens ?? 0);
     }
 
-    return count;
+    // Fallback: Calculate using tiktoken
+    return this.calculateTokens(message);
+  }
+
+  /**
+   * Calculate tokens using tiktoken o200k_base
+   */
+  private calculateTokens(message: ChatMessage): number {
+    let tokenCount = 0;
+
+    // Message structure overhead (role + formatting)
+    tokenCount += 4;
+
+    // Count all message parts
+    for (const part of message.parts) {
+      if (part.kind === 'text' && part.contentText) {
+        tokenCount += this.encoding.encode(part.contentText).length;
+      }
+
+      // Tool invocations: serialize JSON and count
+      if (part.kind === 'tool_invocation' && part.contentJson) {
+        const jsonString = JSON.stringify(JSON.parse(part.contentJson));
+        tokenCount += this.encoding.encode(jsonString).length;
+      }
+
+      // Tool results: serialize JSON and count
+      if (part.kind === 'tool_result' && part.contentJson) {
+        const jsonString = JSON.stringify(JSON.parse(part.contentJson));
+        tokenCount += this.encoding.encode(jsonString).length;
+      }
+
+      // Attachments: count metadata only (not content)
+      if (part.kind === 'attachment') {
+        const metadata = `${part.contentText || ''} ${part.mimeType || ''}`;
+        tokenCount += this.encoding.encode(metadata).length;
+      }
+    }
+
+    return tokenCount;
+  }
+
+  /**
+   * Count tokens for raw text
+   */
+  countText(text: string): number {
+    return this.encoding.encode(text).length;
+  }
+
+  /**
+   * Count tokens for an array of messages
+   */
+  countConversationTokens(messages: ChatMessage[]): TokenCountResult {
+    let totalTokens = 0;
+    let inputTokens = 0;
+    let outputTokens = 0;
+
+    for (const message of messages) {
+      const messageTokens = this.countMessageTokens(message);
+      totalTokens += messageTokens;
+
+      // Categorize by role
+      if (message.role === 'user') {
+        inputTokens += messageTokens;
+      } else if (message.role === 'assistant') {
+        outputTokens += messageTokens;
+      }
+    }
+
+    return {
+      totalTokens,
+      inputTokens,
+      outputTokens,
+      estimatedResponseTokens: 0, // Will be set based on model config
+    };
   }
 
   dispose() {
@@ -159,78 +215,11 @@ class OpenAITokenCounter {
 }
 ```
 
-#### Anthropic Token Counting
-```typescript
-import Anthropic from '@anthropic-ai/sdk';
-
-class AnthropicTokenCounter {
-  private client: Anthropic;
-
-  constructor(apiKey: string) {
-    this.client = new Anthropic({ apiKey });
-  }
-
-  async countMessageTokens(messages: AIMessage[], model: string): Promise<number> {
-    try {
-      const response = await this.client.messages.countTokens({
-        model: model,
-        messages: messages.map(m => ({
-          role: m.role as 'user' | 'assistant',
-          content: m.content,
-        })),
-      });
-      return response.input_tokens;
-    } catch (error) {
-      logger.error('Anthropic token counting failed, using estimation', { error });
-      return this.estimateTokens(messages);
-    }
-  }
-
-  private estimateTokens(messages: AIMessage[]): number {
-    // Fallback: ~4 chars per token average
-    const totalChars = messages.reduce((sum, m) => sum + m.content.length, 0);
-    return Math.ceil(totalChars / 4);
-  }
-}
-```
-
-#### Google Gemini Token Counting
-```typescript
-import { GoogleGenerativeAI } from '@google/generative-ai';
-
-class GeminiTokenCounter {
-  private genAI: GoogleGenerativeAI;
-  private model: string;
-
-  constructor(apiKey: string, model: string) {
-    this.genAI = new GoogleGenerativeAI(apiKey);
-    this.model = model;
-  }
-
-  async countConversationTokens(messages: AIMessage[]): Promise<number> {
-    try {
-      const model = this.genAI.getGenerativeModel({ model: this.model });
-
-      // Convert messages to Gemini format
-      const contents = messages.map(m => ({
-        role: m.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: m.content }],
-      }));
-
-      const result = await model.countTokens({ contents });
-      return result.totalTokens;
-    } catch (error) {
-      logger.error('Gemini token counting failed, using estimation', { error });
-      return this.estimateTokens(messages);
-    }
-  }
-
-  private estimateTokens(messages: AIMessage[]): number {
-    const totalChars = messages.reduce((sum, m) => sum + m.content.length, 0);
-    return Math.ceil(totalChars / 4);
-  }
-}
-```
+**Key Points:**
+1. **Single tokenizer**: tiktoken o200k_base for all providers
+2. **Hybrid logic**: Recorded tokens (100% accurate) → tiktoken fallback (±10-15% for non-OpenAI)
+3. **No API calls**: All counting is local and fast
+4. **Handles all message types**: text, tool calls, tool results, attachments
 
 ### 2. Model Configuration Registry
 
@@ -245,14 +234,11 @@ interface ModelContextConfig {
   model: string;
   contextWindow: number;        // Total context in tokens
   maxOutputTokens: number;      // Maximum response tokens
-  tokenizerType: 'tiktoken' | 'anthropic-api' | 'gemini-api';
-  tokenizerConfig?: {
-    encoding?: string;          // For tiktoken
-    apiEndpoint?: string;       // For API-based
-  };
   defaultCompressionThreshold: number; // Percentage (0-1)
   recommendedRetentionTokens: number;  // Tokens to preserve for recent messages
 }
+
+// Note: tokenizerType removed - all models use tiktoken o200k_base for fallback counting
 
 class ModelConfigRegistry {
   private static configs: Map<string, ModelContextConfig> = new Map([
@@ -262,8 +248,6 @@ class ModelConfigRegistry {
       model: 'gpt-4o',
       contextWindow: 128000,
       maxOutputTokens: 16384,
-      tokenizerType: 'tiktoken',
-      tokenizerConfig: { encoding: 'o200k_base' },
       defaultCompressionThreshold: 0.95,
       recommendedRetentionTokens: 1000,
     }],
@@ -272,8 +256,6 @@ class ModelConfigRegistry {
       model: 'gpt-4o-mini',
       contextWindow: 128000,
       maxOutputTokens: 16384,
-      tokenizerType: 'tiktoken',
-      tokenizerConfig: { encoding: 'o200k_base' },
       defaultCompressionThreshold: 0.95,
       recommendedRetentionTokens: 1000,
     }],
@@ -282,8 +264,6 @@ class ModelConfigRegistry {
       model: 'gpt-4-turbo',
       contextWindow: 128000,
       maxOutputTokens: 4096,
-      tokenizerType: 'tiktoken',
-      tokenizerConfig: { encoding: 'cl100k_base' },
       defaultCompressionThreshold: 0.95,
       recommendedRetentionTokens: 1000,
     }],
@@ -292,8 +272,6 @@ class ModelConfigRegistry {
       model: 'gpt-4',
       contextWindow: 8192,
       maxOutputTokens: 4096,
-      tokenizerType: 'tiktoken',
-      tokenizerConfig: { encoding: 'cl100k_base' },
       defaultCompressionThreshold: 0.95,
       recommendedRetentionTokens: 800,
     }],
@@ -302,8 +280,6 @@ class ModelConfigRegistry {
       model: 'gpt-3.5-turbo',
       contextWindow: 16384,
       maxOutputTokens: 4096,
-      tokenizerType: 'tiktoken',
-      tokenizerConfig: { encoding: 'cl100k_base' },
       defaultCompressionThreshold: 0.95,
       recommendedRetentionTokens: 1000,
     }],
@@ -314,7 +290,6 @@ class ModelConfigRegistry {
       model: 'claude-3-5-sonnet-20241022',
       contextWindow: 200000,
       maxOutputTokens: 8192,
-      tokenizerType: 'anthropic-api',
       defaultCompressionThreshold: 0.95,
       recommendedRetentionTokens: 1500,
     }],
@@ -323,7 +298,6 @@ class ModelConfigRegistry {
       model: 'claude-3-opus-20240229',
       contextWindow: 200000,
       maxOutputTokens: 4096,
-      tokenizerType: 'anthropic-api',
       defaultCompressionThreshold: 0.95,
       recommendedRetentionTokens: 1500,
     }],
@@ -332,7 +306,6 @@ class ModelConfigRegistry {
       model: 'claude-3-haiku-20240307',
       contextWindow: 200000,
       maxOutputTokens: 4096,
-      tokenizerType: 'anthropic-api',
       defaultCompressionThreshold: 0.95,
       recommendedRetentionTokens: 1500,
     }],
@@ -343,7 +316,6 @@ class ModelConfigRegistry {
       model: 'gemini-2.5-pro',
       contextWindow: 1048576,
       maxOutputTokens: 65535,
-      tokenizerType: 'gemini-api',
       defaultCompressionThreshold: 0.98, // Higher threshold due to massive context
       recommendedRetentionTokens: 2000,
     }],
@@ -352,7 +324,6 @@ class ModelConfigRegistry {
       model: 'gemini-2.5-flash',
       contextWindow: 1048576,
       maxOutputTokens: 65535,
-      tokenizerType: 'gemini-api',
       defaultCompressionThreshold: 0.98,
       recommendedRetentionTokens: 2000,
     }],
@@ -1419,13 +1390,16 @@ describe('Compression Integration', () => {
 
 **Implementation:** See `autoCompress` method lines 584-593 for logic that checks for existing summaries and includes them in re-summarization.
 
-### ✅ RESOLVED: Token Counting for Tool Calls and Attachments
-**Decision:**
-- Tool invocations: Count tokens by tokenizing JSON input and output using the model's tokenization method
-- Attachments: Count metadata only (filename, MIME type, size in bytes) - not the actual content
-- This aligns with how providers actually count tokens for these elements
+### ✅ RESOLVED: Token Counting Strategy
+**Decision:** Hybrid approach - recorded tokens (priority) + tiktoken o200k_base (fallback)
 
-**Implementation:** Token counting in `TokenCounter` service should serialize tool call JSON and count those tokens.
+**Details:**
+- **Recorded tokens**: Use `inputTokens` and `outputTokens` from AI response `usage` field (100% accurate)
+- **Fallback**: tiktoken o200k_base for local calculation when no record exists (±10-15% for non-OpenAI)
+- **Tool invocations**: Serialize JSON input/output, then count with tiktoken
+- **Attachments**: Count metadata only (filename, MIME type, size) - not content
+
+**Rationale:** See `CONVERSATION_HISTORY_COMPRESSION_TOKEN_COUNTING_STRATEGY.md` for detailed analysis of alternatives and decision rationale.
 
 ### ✅ RESOLVED: Message Retention Strategy
 **Decision:** Retention is based on TOKEN COUNT, not message count. The system retains the maximum number of recent messages that fit within a configurable token budget (default: 1000 tokens).
@@ -1464,6 +1438,12 @@ describe('Compression Integration', () => {
 
 ---
 
-**Document Version:** 1.1
+**Document Version:** 2.0
 **Last Updated:** 2025-11-16
-**Status:** Requirements Clarified - Ready for Implementation
+**Status:** Token Counting Strategy Finalized - Ready for Implementation
+
+**Major Changes in v2.0:**
+- Simplified token counting to hybrid approach (recorded + tiktoken o200k_base fallback)
+- Removed provider-specific tokenizer implementations (Anthropic API, Gemini API)
+- Removed `tokenizerType` from ModelConfigRegistry (no longer needed)
+- Added `CONVERSATION_HISTORY_COMPRESSION_TOKEN_COUNTING_STRATEGY.md` for decision rationale

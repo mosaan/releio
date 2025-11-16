@@ -65,18 +65,18 @@ As a user engaged in a long conversation, I want the system to automatically man
 
 #### 1.1 Token Counting
 - **FR-1.1.1**: The system SHALL calculate total token count of conversation history before each AI request
-- **FR-1.1.2**: Token counting SHALL use provider-specific tokenization methods:
-  - OpenAI: tiktoken library with appropriate encoding
-  - Anthropic: Anthropic `countTokens` API
-  - Google: Gemini `countTokens` API
+- **FR-1.1.2**: Token counting SHALL use a **hybrid approach** for practical accuracy:
+  - **Priority**: Use recorded token counts from AI response `usage` field (stored in `inputTokens`, `outputTokens`)
+  - **Fallback**: Use tiktoken o200k_base for local calculation when no record exists
+  - **Rationale**: See `CONVERSATION_HISTORY_COMPRESSION_TOKEN_COUNTING_STRATEGY.md` for detailed design decision
 - **FR-1.1.3**: Token count SHALL include:
   - User messages (all parts: text content)
   - Assistant messages (all parts: text content)
-  - Tool invocations (JSON input and output)
+  - Tool invocations (JSON input and output, serialized then tokenized)
   - Attachment metadata (filename, MIME type, size - but not content)
   - System messages (if any)
   - Current user input being sent
-- **FR-1.1.4**: The system SHALL persist calculated token counts in `chatMessages.inputTokens` and `chatMessages.outputTokens` fields
+- **FR-1.1.4**: The system SHALL persist token counts from AI responses in `chatMessages.inputTokens` and `chatMessages.outputTokens` fields after every AI request
 
 #### 1.2 Compression Trigger
 - **FR-1.2.1**: Compression SHALL trigger when total conversation token count exceeds a **configurable threshold percentage** of the model's context window
@@ -188,17 +188,17 @@ As a user, I want to manually compress conversation history at any time so that 
 - **FR-3.2.1**: The system SHALL maintain a configuration map for each supported model containing:
   - Context window size (tokens)
   - Maximum output tokens
-  - Tokenization method
   - Default compression threshold
   - Default retention token count
 - **FR-3.2.2**: Configuration SHALL be updateable as new models are released
 
+**Note:** Tokenization method is not model-specific; all models use tiktoken o200k_base as the universal fallback tokenizer.
+
 #### 3.3 Tokenization Library Management
-- **FR-3.3.1**: The system SHALL include appropriate tokenization libraries:
-  - `tiktoken` for OpenAI models
-  - Anthropic SDK for Claude models (with `countTokens` API)
-  - Google SDK for Gemini models (with `countTokens` API)
-- **FR-3.3.2**: The system SHALL handle tokenization errors gracefully (e.g., fallback to approximate counting)
+- **FR-3.3.1**: The system SHALL include `tiktoken` library for token counting:
+  - Use `o200k_base` encoding as the standard fallback tokenizer
+  - Fast, local processing without API calls
+- **FR-3.3.2**: The system SHALL handle tokenization errors gracefully (e.g., fallback to character-based estimation if tiktoken fails)
 
 ### 4. Data Model and Persistence
 
@@ -323,9 +323,11 @@ As a user, I want to manually compress conversation history at any time so that 
 
 ### 3. Token Counting for Tool Calls and Attachments ✅ RESOLVED
 **Decision:**
-- Tool invocations: Count tokens by tokenizing JSON input and output using the model's tokenization method
+- Tool invocations: Serialize JSON input/output, then count tokens using tiktoken o200k_base
 - Attachments: Count metadata only (filename, MIME type, size in bytes) - not the actual content
-- This aligns with how providers actually count tokens for these elements
+- This provides consistent counting across all providers
+
+**Implementation:** See `CONVERSATION_HISTORY_COMPRESSION_TOKEN_COUNTING_STRATEGY.md` for the hybrid approach design.
 
 ### 4. Summarization Model Selection
 **Question:** Which model should generate the summary?
@@ -545,7 +547,7 @@ Conversation:
 
 ---
 
-**Document Version:** 1.1
+**Document Version:** 1.2
 **Last Updated:** 2025-11-16
 **Author:** Claude Code Agent
-**Status:** Requirements Clarified - Ready for Implementation
+**Status:** Token Counting Strategy Finalized - Ready for Implementation
