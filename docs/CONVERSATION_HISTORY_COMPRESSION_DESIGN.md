@@ -239,6 +239,8 @@ interface ModelContextConfig {
 }
 
 // Note: tokenizerType removed - all models use tiktoken o200k_base for fallback counting
+// Note: This configuration includes both currently available models and future models.
+//       When implementing, ensure corresponding models are also added to src/backend/ai/factory.ts
 
 class ModelConfigRegistry {
   private static configs: Map<string, ModelContextConfig> = new Map([
