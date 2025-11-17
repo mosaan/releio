@@ -210,12 +210,17 @@ export function CompressionSettings({ className, sessionId = 'global-defaults' }
           )}
 
           {/* Save Button */}
-          <div className="flex items-center gap-3 pt-2">
+          <div className="flex items-center justify-end gap-2">
             <Button
               onClick={handleSave}
               disabled={isSaving || saveSuccess}
-              variant={saveSuccess ? 'default' : 'outline'}
-              className={saveSuccess ? 'bg-green-600 hover:bg-green-700 text-white' : ''}
+              variant="outline"
+              size="sm"
+              className={
+                saveSuccess
+                  ? 'bg-green-600 hover:bg-green-700 text-white border-green-600'
+                  : 'bg-green-50 text-green-700 border-green-300 hover:bg-green-100 dark:bg-green-950 dark:text-green-400 dark:border-green-800 dark:hover:bg-green-900'
+              }
             >
               {isSaving ? (
                 <>

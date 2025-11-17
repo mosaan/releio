@@ -16,7 +16,7 @@ import {
   CardHeader,
   CardTitle
 } from '@renderer/components/ui/card'
-import { Loader2, RefreshCw, CheckCircle } from 'lucide-react'
+import { Loader2, RefreshCw, CheckCircle, Save } from 'lucide-react'
 import type { ProxySettings, ProxyMode } from '@common/types'
 import { isOk } from '@common/result'
 import { logger } from '@renderer/lib/logger'
@@ -226,49 +226,56 @@ export function ProxySettings({ className = '' }: ProxySettingsProps): React.JSX
           </>
         )}
 
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            {mode === 'system' && (
-              <Button
-                onClick={loadSystemSettings}
-                disabled={isLoadingSystem}
-                variant="outline"
-                size="sm"
-              >
-                {isLoadingSystem ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Reloading...
-                  </>
-                ) : (
-                  <>
-                    <RefreshCw className="h-4 w-4" />
-                    Reload System Settings
-                  </>
-                )}
-              </Button>
-            )}
+        {mode === 'system' && (
+          <div className="flex items-center gap-2 mb-4">
+            <Button
+              onClick={loadSystemSettings}
+              disabled={isLoadingSystem}
+              variant="outline"
+              size="sm"
+            >
+              {isLoadingSystem ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Reloading...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  Reload System Settings
+                </>
+              )}
+            </Button>
           </div>
+        )}
 
+        <div className="flex items-center justify-end gap-2">
           <Button
             onClick={saveSettings}
-            disabled={isSaving}
+            disabled={isSaving || saveSuccess}
+            variant="outline"
             size="sm"
-            variant={saveSuccess ? 'default' : 'default'}
-            className={saveSuccess ? 'bg-green-600 hover:bg-green-700 text-white' : ''}
+            className={
+              saveSuccess
+                ? 'bg-green-600 hover:bg-green-700 text-white border-green-600'
+                : 'bg-green-50 text-green-700 border-green-300 hover:bg-green-100 dark:bg-green-950 dark:text-green-400 dark:border-green-800 dark:hover:bg-green-900'
+            }
           >
             {isSaving ? (
               <>
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 Saving...
               </>
             ) : saveSuccess ? (
               <>
-                <CheckCircle className="h-4 w-4" />
-                Settings Saved!
+                <CheckCircle className="mr-2 h-4 w-4" />
+                Saved
               </>
             ) : (
-              'Save Settings'
+              <>
+                <Save className="mr-2 h-4 w-4" />
+                Save Settings
+              </>
             )}
           </Button>
         </div>
