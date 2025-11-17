@@ -18,12 +18,12 @@ This phase builds on Phase 1 (backend implementation) which delivered the core c
 
 Use timestamps to track progress. Update this section at every stopping point.
 
-- [ ] Milestone 1: IPC Communication Layer
-  - [ ] Add compression-related types to `src/common/types.ts`
-  - [ ] Extend `RendererBackendAPI` interface with compression methods
-  - [ ] Implement handlers in `src/backend/handlers.ts`
-  - [ ] Update `src/preload/server.ts` to expose new APIs
-  - [ ] Write unit tests for IPC handlers
+- [x] Milestone 1: IPC Communication Layer (Completed: 2025-11-17)
+  - [x] Add compression-related types to `src/common/types.ts`
+  - [x] Extend `RendererBackendAPI` interface with compression methods
+  - [x] Implement handlers in `src/backend/handler.ts`
+  - [x] Update `src/preload/server.ts` to expose new APIs
+  - [ ] Write unit tests for IPC handlers (Deferred to Milestone 7)
 
 - [ ] Milestone 2: Settings UI for Compression Configuration
   - [ ] Create `CompressionSettings.tsx` component
@@ -85,7 +85,23 @@ Document unexpected behaviors, bugs, optimizations, or insights discovered durin
 
 Record every decision made while working on the plan.
 
-(To be filled during implementation)
+### Milestone 1: IPC Communication Layer (2025-11-17)
+
+**Decision 1: Compression Settings Storage**
+- **Context**: Need to decide where to store compression settings (per-session vs global)
+- **Decision**: Store settings per-session using key pattern `compression:${sessionId}` with fallback to defaults
+- **Rationale**: Allows different sessions to have different compression preferences while providing sensible defaults
+- **Defaults chosen**: threshold=0.95 (95%), retentionTokens=2000, autoCompress=true
+
+**Decision 2: Error Handling in Handlers**
+- **Context**: Handler methods need consistent error handling
+- **Decision**: Use `Result<T, string>` for all compression handlers that can fail with validation or runtime errors
+- **Rationale**: Matches existing patterns in handler.ts (e.g., testFullConnection, MCP handlers)
+
+**Decision 3: ModelConfigService Initialization**
+- **Context**: ModelConfigService requires database instance
+- **Decision**: Initialize in Handler constructor with existing `db` instance
+- **Rationale**: Follows dependency injection pattern, shares database connection with other services
 
 
 ## Outcomes & Retrospective

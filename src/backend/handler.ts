@@ -19,7 +19,12 @@ import type {
   AIProviderConfig,
   AzureProviderConfig,
   AIProviderConfiguration,
-  AIModelDefinition
+  AIModelDefinition,
+  CompressionSettings,
+  TokenUsageInfo,
+  CompressionPreview,
+  CompressionResult as CommonCompressionResult,
+  CompressionSummary
 } from '@common/types'
 import { ok, error, isOk } from '@common/result'
 import { dirname } from 'path'
@@ -56,14 +61,30 @@ import type {
   ChatSessionWithMessages
 } from '@common/chat-types'
 import { db } from './db'
+import { CompressionService } from './compression/CompressionService'
+import { TokenCounter } from './compression/TokenCounter'
+import { SummarizationService } from './compression/SummarizationService'
+import { ModelConfigService } from './compression/ModelConfigService'
 
 export class Handler {
   private _rendererConnection: Connection
   private _sessionStore: ChatSessionStore
+  private _compressionService: CompressionService
 
   constructor({ rendererConnetion }: { rendererConnetion: Connection }) {
     this._rendererConnection = rendererConnetion
     this._sessionStore = new ChatSessionStore(db)
+
+    // Initialize compression service dependencies
+    const tokenCounter = new TokenCounter()
+    const summarizationService = new SummarizationService()
+    const modelConfigService = new ModelConfigService(db)
+    this._compressionService = new CompressionService(
+      tokenCounter,
+      summarizationService,
+      this._sessionStore,
+      modelConfigService
+    )
   }
 
   async ping(): Promise<Result<string>> {
@@ -451,5 +472,183 @@ export class Handler {
   async setLastSessionId(sessionId: string): Promise<Result<void>> {
     await this._sessionStore.setLastSessionId(sessionId)
     return ok(undefined)
+  }
+
+  // Compression handlers
+
+  async getCompressionSettings(sessionId: string): Promise<Result<CompressionSettings>> {
+    // Get per-session settings, or fall back to defaults
+    const settingsKey = `compression:${sessionId}`
+    const sessionSettings = await getSetting<CompressionSettings>(settingsKey)
+
+    if (sessionSettings) {
+      return ok(sessionSettings)
+    }
+
+    // Return defaults
+    const defaults: CompressionSettings = {
+      threshold: 0.95, // 95% of context window
+      retentionTokens: 2000, // Default retention tokens
+      autoCompress: true
+    }
+    return ok(defaults)
+  }
+
+  async setCompressionSettings(
+    sessionId: string,
+    settings: CompressionSettings
+  ): Promise<Result<void, string>> {
+    // Validate settings
+    if (settings.threshold < 0.7 || settings.threshold > 1.0) {
+      return error('Threshold must be between 0.70 and 1.00')
+    }
+    if (settings.retentionTokens < 0) {
+      return error('Retention tokens must be positive')
+    }
+
+    // Store per-session settings
+    const settingsKey = `compression:${sessionId}`
+    await setSetting(settingsKey, settings)
+    return ok(undefined)
+  }
+
+  async getTokenUsage(
+    sessionId: string,
+    provider: string,
+    model: string,
+    additionalInput?: string
+  ): Promise<Result<TokenUsageInfo, string>> {
+    try {
+      const contextCheck = await this._compressionService.checkContext(
+        sessionId,
+        provider,
+        model,
+        additionalInput
+      )
+
+      const tokenUsage: TokenUsageInfo = {
+        currentTokens: contextCheck.currentTokenCount,
+        maxTokens: contextCheck.contextLimit,
+        inputTokens: contextCheck.currentTokenCount, // Simplified for now
+        outputTokens: 0, // Not tracked separately in context check
+        estimatedResponseTokens: contextCheck.estimatedResponseTokens,
+        utilizationPercentage: contextCheck.utilizationPercentage,
+        thresholdPercentage: (contextCheck.thresholdTokenCount / contextCheck.contextLimit) * 100,
+        needsCompression: contextCheck.needsCompression
+      }
+
+      return ok(tokenUsage)
+    } catch (err) {
+      logger.error('Failed to get token usage', { sessionId, error: err })
+      return error(err instanceof Error ? err.message : 'Failed to get token usage')
+    }
+  }
+
+  async checkCompressionNeeded(
+    sessionId: string,
+    provider: string,
+    model: string
+  ): Promise<Result<boolean, string>> {
+    try {
+      const contextCheck = await this._compressionService.checkContext(sessionId, provider, model)
+      return ok(contextCheck.needsCompression)
+    } catch (err) {
+      logger.error('Failed to check compression needed', { sessionId, error: err })
+      return error(err instanceof Error ? err.message : 'Failed to check compression')
+    }
+  }
+
+  async getCompressionPreview(
+    sessionId: string,
+    provider: string,
+    model: string,
+    _retentionTokens?: number
+  ): Promise<Result<CompressionPreview, string>> {
+    try {
+      const contextCheck = await this._compressionService.checkContext(sessionId, provider, model)
+
+      // Calculate expected new token count
+      // This is approximate: summary tokens + retained message tokens
+      const estimatedSummaryTokens = Math.min(500, contextCheck.compressibleMessageCount * 10) // Rough estimate
+      const expectedNewTokens = estimatedSummaryTokens + (contextCheck.currentTokenCount - contextCheck.currentTokenCount * (contextCheck.compressibleMessageCount / (contextCheck.compressibleMessageCount + contextCheck.retainedMessageCount)))
+
+      const tokenSavings = contextCheck.currentTokenCount - expectedNewTokens
+      const savingsPercentage = (tokenSavings / contextCheck.currentTokenCount) * 100
+
+      const preview: CompressionPreview = {
+        messagesToCompress: contextCheck.compressibleMessageCount,
+        currentTokens: contextCheck.currentTokenCount,
+        expectedNewTokens: Math.floor(expectedNewTokens),
+        tokenSavings: Math.floor(tokenSavings),
+        savingsPercentage,
+        canCompress: contextCheck.compressibleMessageCount > 0,
+        reason: contextCheck.compressibleMessageCount === 0 ? 'No messages to compress' : undefined
+      }
+
+      return ok(preview)
+    } catch (err) {
+      logger.error('Failed to get compression preview', { sessionId, error: err })
+      return error(err instanceof Error ? err.message : 'Failed to get compression preview')
+    }
+  }
+
+  async compressConversation(
+    sessionId: string,
+    provider: string,
+    model: string,
+    apiKey: string,
+    force?: boolean,
+    retentionTokenCount?: number
+  ): Promise<Result<CommonCompressionResult, string>> {
+    try {
+      logger.info('Compressing conversation', { sessionId, provider, model, force })
+
+      const result = await this._compressionService.autoCompress({
+        sessionId,
+        provider,
+        model,
+        apiKey,
+        force,
+        retentionTokenCount
+      })
+
+      // Map internal CompressionResult to common CompressionResult type
+      const commonResult: CommonCompressionResult = {
+        compressed: result.compressed,
+        summaryId: result.summaryId,
+        messagesCompressed: result.messagesCompressed,
+        originalTokenCount: result.originalTokenCount,
+        newTokenCount: result.newTokenCount,
+        compressionRatio: result.compressionRatio,
+        reason: result.compressed ? undefined : 'Compression not needed'
+      }
+
+      return ok(commonResult)
+    } catch (err) {
+      logger.error('Failed to compress conversation', { sessionId, error: err })
+      return error(err instanceof Error ? err.message : 'Failed to compress conversation')
+    }
+  }
+
+  async getCompressionSummaries(sessionId: string): Promise<Result<CompressionSummary[], string>> {
+    try {
+      const snapshots = await this._sessionStore.getSnapshots(sessionId)
+
+      // Filter for summary snapshots and map to CompressionSummary type
+      const summaries: CompressionSummary[] = snapshots
+        .filter((s) => s.kind === 'summary')
+        .map((s) => ({
+          id: s.id,
+          content: typeof s.content === 'string' ? s.content : JSON.stringify(s.content),
+          messageCutoffId: s.messageCutoffId,
+          tokenCount: s.tokenCount,
+          createdAt: s.createdAt
+        }))
+
+      return ok(summaries)
+    } catch (err) {
+      logger.error('Failed to get compression summaries', { sessionId, error: err })
+      return error(err instanceof Error ? err.message : 'Failed to get compression summaries')
+    }
   }
 }
