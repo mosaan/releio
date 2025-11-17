@@ -111,7 +111,14 @@ export function ChatPanel({ onSettings }: ChatPanelProps): React.JSX.Element {
     }
 
     checkCompression()
-  }, [currentSessionId, modelSelection, currentSession?.updatedAt, currentSession?.messageCount])
+  }, [
+    currentSessionId,
+    modelSelection,
+    currentSession?.updatedAt,
+    currentSession?.messageCount,
+    currentSession?.messages?.length,
+    currentSession?.messages?.[currentSession.messages.length - 1]?.id
+  ])
 
   // Handle compression completion
   const handleCompressionComplete = (result: CompressionResult): void => {

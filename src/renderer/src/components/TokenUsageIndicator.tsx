@@ -63,7 +63,14 @@ export function TokenUsageIndicator({ sessionId, modelSelection, currentSession 
     }
 
     fetchTokenUsage()
-  }, [sessionId, modelSelection, currentSession?.updatedAt, currentSession?.messageCount])
+  }, [
+    sessionId,
+    modelSelection,
+    currentSession?.updatedAt,
+    currentSession?.messageCount,
+    currentSession?.messages?.length,
+    currentSession?.messages?.[currentSession.messages.length - 1]?.id
+  ])
 
   // Don't render if no session or model selected
   if (!sessionId || !modelSelection || error) {
