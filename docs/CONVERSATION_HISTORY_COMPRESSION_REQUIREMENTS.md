@@ -87,8 +87,8 @@ As a user engaged in a long conversation, I want the system to automatically man
 
 #### 1.2 Compression Trigger
 - **FR-1.2.1**: Compression MUST trigger automatically when total conversation token count exceeds a **configurable threshold percentage** of the model's context window
-- **FR-1.2.2**: Default threshold MUST be **95%** of context window
-- **FR-1.2.3**: Threshold SHOULD be configurable per provider/model in settings
+- **FR-1.2.2**: Default threshold SHOULD be **95%** of context window (models MAY have specific defaults defined in FR-3.2.1)
+- **FR-1.2.3**: Threshold MUST be configurable per provider/model in settings
 - **FR-1.2.4**: The system MUST reserve space for:
   - Current user input (estimated)
   - Expected AI response (using max output tokens)
@@ -97,10 +97,9 @@ As a user engaged in a long conversation, I want the system to automatically man
 #### 1.3 Message Retention Strategy
 - **FR-1.3.1**: The system MUST preserve recent messages based on a **configurable token count** rather than message count
 - **FR-1.3.2**: Default token retention count SHOULD be **1000 tokens**
-- **FR-1.3.3**: Retention token count MUST be configurable in settings
-- **FR-1.3.4**: The system MUST retain the maximum number of recent messages that fit within the retention token budget
+- **FR-1.3.3**: The system MUST retain the maximum number of recent messages that fit within the retention token budget
   - Example: If retention budget is 1000 tokens, and the most recent 3 messages total 900 tokens while 4 messages total 1100 tokens, retain 3 messages
-- **FR-1.3.5**: Messages older than the retention boundary MUST be candidates for summarization
+- **FR-1.3.4**: Messages older than the retention boundary MUST be candidates for summarization
 
 #### 1.4 Summarization Process
 - **FR-1.4.1**: The system MUST summarize messages older than the retention boundary into a single summary message
@@ -172,8 +171,8 @@ As a user, I want to manually compress conversation history at any time so that 
 **Functional Requirements:**
 
 #### 3.1 Compression Settings
-- **FR-3.1.1**: The system SHOULD provide configuration options for:
-  - Compression threshold percentage (per model)
+- **FR-3.1.1**: The system MUST provide configuration options for:
+  - Compression threshold percentage per provider/model (see FR-1.2.3)
   - Retention token count (how many tokens of recent messages to preserve)
   - Notification preferences
 - **FR-3.1.2**: Settings MUST be persisted in the database (`settings` table)
@@ -190,11 +189,9 @@ As a user, I want to manually compress conversation history at any time so that 
 - **FR-3.2.2**: Configuration SHOULD be updateable as new models are released
 
 #### 3.3 Tokenization Library Management
-- **FR-3.3.1**: The system SHOULD use `tiktoken` library with `o200k_base` encoding as the standard tokenizer
-  - Fast, local processing without API calls
-  - Provides reasonable accuracy across different AI providers (±10-15% for non-OpenAI models)
-  - Alternative tokenizers MAY be used if they provide better accuracy or performance
-- **FR-3.3.2**: The system MUST handle tokenization errors according to FR-5.2.1 (display error and allow retry; no fallback methods)
+- **FR-3.3.1**: The system MUST handle tokenization errors according to FR-5.2.1 (display error and allow retry; no fallback methods)
+
+**Note:** Tokenizer selection is specified in FR-1.1.3.
 
 ### 4. Data Model and Persistence
 
@@ -523,16 +520,21 @@ Conversation:
 - **FR-1.1.3**: Changed tiktoken o200k_base from MAY to SHOULD (recommended but not mandatory)
 - **FR-1.1.4**: Renumbered from FR-1.1.3 (token count inclusion requirements)
 - **FR-1.1.5**: API response token counts are now MAY (for monitoring only, not compression decisions)
+- **FR-1.2.2**: Changed from MUST to SHOULD (default value is a recommendation); added note about model-specific defaults
+- **FR-1.2.3**: Changed from SHOULD to MUST (configurability is required)
 - **FR-1.3.2**: Changed from MUST to SHOULD (default value is a recommendation)
-- **FR-1.3.3**: Changed from SHOULD to MUST (configurability is required)
+- **FR-1.3.3**: Deleted (merged into FR-3.1.1 to eliminate duplication)
+- **FR-1.3.4-1.3.5**: Renumbered from FR-1.3.5-1.3.6 due to FR-1.3.3 deletion
 - **FR-2.1.1**: Added slash command as an example of UI action
 - **FR-2.1.2**: Added slash command (`/summarize`) as an accessibility option
 - **FR-2.1.3**: Added slash command labeling example
+- **FR-3.1.1**: Changed from SHOULD to MUST; added reference to FR-1.2.3 for threshold configuration
 - **FR-3.2.1 Note**: Removed (redundant after hybrid approach removal)
-- **FR-3.3.1**: Changed from MAY to SHOULD for tiktoken o200k_base
-- **FR-3.3.2**: Updated to reference FR-5.2.1 for error handling (no fallback methods)
+- **FR-3.3.1**: Replaced tokenizer selection requirement with error handling only (tokenizer selection moved to FR-1.1.3 to eliminate duplication)
+- **FR-3.3.1 Note**: Added reference to FR-1.1.3 for tokenizer selection
 - **Appendix A**: Removed provider-specific API examples; kept only local tiktoken example
 - **Rationale**: API response token counts are cumulative and unavailable before sending requests, making them unsuitable for compression decisions
+- **Consistency improvements**: Aligned modal verbs (MUST/SHOULD/MAY) across related requirements; eliminated duplicate definitions
 
 **Changes in v1.4:**
 - **FR-4.2.1**: Simplified summary content format to essential fields only (summaryText + messageRange)
