@@ -129,46 +129,49 @@ export function TokenUsageIndicator({ sessionId, modelSelection }: TokenUsageInd
             </span>
           </div>
         </TooltipTrigger>
-        <TooltipContent side="bottom" className="p-3 max-w-xs">
+        <TooltipContent
+          side="bottom"
+          className="p-3 max-w-xs bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700 shadow-lg"
+        >
           <div className="space-y-2 text-xs">
-            <div className="flex items-center gap-2 pb-2 border-b">
-              <Info className="h-3.5 w-3.5" />
-              <span className="font-semibold">Token Usage Details</span>
+            <div className="flex items-center gap-2 pb-2 border-b border-gray-200 dark:border-gray-700">
+              <Info className="h-3.5 w-3.5 text-gray-600 dark:text-gray-400" />
+              <span className="font-semibold text-gray-900 dark:text-gray-100">Token Usage Details</span>
             </div>
 
             <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-              <span className="text-muted-foreground">Input tokens:</span>
-              <span className="font-medium text-right">{formatNumber(tokenUsage.inputTokens)}</span>
+              <span className="text-gray-600 dark:text-gray-400">Input tokens:</span>
+              <span className="font-medium text-right text-gray-900 dark:text-gray-100">{formatNumber(tokenUsage.inputTokens)}</span>
 
-              <span className="text-muted-foreground">Output tokens:</span>
-              <span className="font-medium text-right">{formatNumber(tokenUsage.outputTokens)}</span>
+              <span className="text-gray-600 dark:text-gray-400">Output tokens:</span>
+              <span className="font-medium text-right text-gray-900 dark:text-gray-100">{formatNumber(tokenUsage.outputTokens)}</span>
 
-              <span className="text-muted-foreground">Estimated response:</span>
-              <span className="font-medium text-right">{formatNumber(tokenUsage.estimatedResponseTokens)}</span>
+              <span className="text-gray-600 dark:text-gray-400">Estimated response:</span>
+              <span className="font-medium text-right text-gray-900 dark:text-gray-100">{formatNumber(tokenUsage.estimatedResponseTokens)}</span>
 
-              <span className="text-muted-foreground">Total usage:</span>
-              <span className="font-medium text-right">{formatNumber(tokenUsage.currentTokens)}</span>
+              <span className="text-gray-600 dark:text-gray-400">Total usage:</span>
+              <span className="font-medium text-right text-gray-900 dark:text-gray-100">{formatNumber(tokenUsage.currentTokens)}</span>
             </div>
 
-            <div className="pt-2 border-t space-y-1">
+            <div className="pt-2 border-t border-gray-200 dark:border-gray-700 space-y-1">
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Context limit:</span>
-                <span className="font-medium">{formatNumber(tokenUsage.maxTokens)}</span>
+                <span className="text-gray-600 dark:text-gray-400">Context limit:</span>
+                <span className="font-medium text-gray-900 dark:text-gray-100">{formatNumber(tokenUsage.maxTokens)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Utilization:</span>
+                <span className="text-gray-600 dark:text-gray-400">Utilization:</span>
                 <span className={`font-semibold ${getColor()}`}>
                   {tokenUsage.utilizationPercentage.toFixed(2)}%
                 </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Threshold:</span>
-                <span className="font-medium">{tokenUsage.thresholdPercentage.toFixed(0)}%</span>
+                <span className="text-gray-600 dark:text-gray-400">Threshold:</span>
+                <span className="font-medium text-gray-900 dark:text-gray-100">{tokenUsage.thresholdPercentage.toFixed(0)}%</span>
               </div>
             </div>
 
             {tokenUsage.needsCompression && (
-              <div className="pt-2 border-t">
+              <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
                 <span className="text-orange-600 dark:text-orange-500 font-medium">
                   ⚠️ Compression recommended
                 </span>
