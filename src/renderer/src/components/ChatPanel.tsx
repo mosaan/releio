@@ -158,12 +158,16 @@ export function ChatPanel({ onSettings }: ChatPanelProps): React.JSX.Element {
               )}
             </div>
             <TokenUsageIndicator sessionId={currentSessionId} modelSelection={modelSelection} currentSession={currentSession} />
-            {compressionNeeded && currentSessionId && modelSelection && apiKey && (
+            {currentSessionId && modelSelection && apiKey && (
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => setShowCompressionDialog(true)}
-                className="flex items-center gap-1.5 text-orange-600 dark:text-orange-500 border-orange-200 dark:border-orange-800 hover:bg-orange-50 dark:hover:bg-orange-950/30"
+                className={
+                  compressionNeeded
+                    ? 'flex items-center gap-1.5 text-orange-600 dark:text-orange-500 border-orange-200 dark:border-orange-800 hover:bg-orange-50 dark:hover:bg-orange-950/30'
+                    : 'flex items-center gap-1.5'
+                }
               >
                 <Archive className="h-4 w-4" />
                 <span className="hidden sm:inline">Compress</span>
