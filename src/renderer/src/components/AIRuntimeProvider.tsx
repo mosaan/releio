@@ -38,6 +38,65 @@ export function AIRuntimeProvider({ children, modelSelection, chatSessionId, ini
           .join('')
       }))
 
+      // Check and perform automatic compression if needed (before saving user message)
+      if (sessionId && currentSelection) {
+        try {
+          // Get provider configuration
+          const configResult = await window.backend.getProviderConfiguration(currentSelection.providerConfigId)
+          if (isOk(configResult) && configResult.value) {
+            const providerConfig = configResult.value
+            const provider = providerConfig.type
+            const model = currentSelection.modelId
+            const apiKey = providerConfig.config.apiKey || ''
+
+            // Get compression settings to check if auto-compression is enabled
+            const settingsResult = await window.backend.getCompressionSettings(sessionId)
+            if (isOk(settingsResult) && settingsResult.value.autoCompress) {
+              // Check if compression is needed
+              const needsCompressionResult = await window.backend.checkCompressionNeeded(
+                sessionId,
+                provider,
+                model
+              )
+
+              if (isOk(needsCompressionResult) && needsCompressionResult.value) {
+                logger.info('[Compression] Auto-compression triggered', { sessionId })
+
+                // Perform compression
+                const compressionResult = await window.backend.compressConversation(
+                  sessionId,
+                  provider,
+                  model,
+                  apiKey,
+                  false // Don't force, respect threshold
+                )
+
+                if (isOk(compressionResult) && compressionResult.value.compressed) {
+                  logger.info('[Compression] Auto-compression completed successfully', {
+                    sessionId,
+                    result: compressionResult.value
+                  })
+                  // Note: Session will be reloaded after message completion
+                } else if (isOk(compressionResult)) {
+                  logger.info('[Compression] Auto-compression skipped', {
+                    sessionId,
+                    reason: compressionResult.value.reason
+                  })
+                } else {
+                  logger.error('[Compression] Auto-compression failed', {
+                    sessionId,
+                    error: compressionResult.error
+                  })
+                }
+              }
+            }
+          }
+        } catch (error) {
+          // Don't fail the message send if compression fails
+          logger.error('[Compression] Error during auto-compression check:', error)
+        }
+      }
+
       // Save user message to database before streaming (last message is the new user message)
       if (sessionId && formattedMessages.length > 0) {
         const lastMessage = formattedMessages[formattedMessages.length - 1]

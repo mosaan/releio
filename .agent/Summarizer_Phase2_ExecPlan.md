@@ -50,12 +50,13 @@ Use timestamps to track progress. Update this section at every stopping point.
   - [x] Implement compression execution with progress indicator
   - [x] Handle errors gracefully with user-friendly messages
 
-- [ ] Milestone 5: Automatic Compression Integration
-  - [ ] Integrate compression check before AI streaming
-  - [ ] Trigger auto-compression when threshold exceeded
-  - [ ] Show non-blocking notification during compression
-  - [ ] Update chat with summary message after compression
-  - [ ] Ensure message IDs remain stable after compression
+- [x] Milestone 5: Automatic Compression Integration (Completed: 2025-11-17)
+  - [x] Integrate compression check before AI streaming
+  - [x] Trigger auto-compression when threshold exceeded
+  - [x] Respect autoCompress setting from compression configuration
+  - [ ] Show non-blocking notification during compression (Deferred - logged for now)
+  - [x] Update chat with summary message after compression (via session refresh)
+  - [x] Ensure message IDs remain stable after compression (handled by backend)
 
 - [ ] Milestone 6: Compression Summary Display
   - [ ] Create `SummaryMessage.tsx` component
