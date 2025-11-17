@@ -53,13 +53,6 @@ export function SessionManagerProvider({ children }: SessionManagerProviderProps
     }
   }, [])
 
-  // Refresh current session details (messages, compression summaries, etc.)
-  const refreshCurrentSession = useCallback(async () => {
-    if (currentSessionId) {
-      await loadCurrentSession(currentSessionId)
-    }
-  }, [currentSessionId, loadCurrentSession])
-
   // Load current session details
   const loadCurrentSession = useCallback(async (sessionId: string) => {
     try {
@@ -85,6 +78,13 @@ export function SessionManagerProvider({ children }: SessionManagerProviderProps
       logger.error('Error loading session:', error)
     }
   }, [])
+
+  // Refresh current session details (messages, compression summaries, etc.)
+  const refreshCurrentSession = useCallback(async () => {
+    if (currentSessionId) {
+      await loadCurrentSession(currentSessionId)
+    }
+  }, [currentSessionId, loadCurrentSession])
 
   // Initialize: load last session ID and sessions
   useEffect(() => {
