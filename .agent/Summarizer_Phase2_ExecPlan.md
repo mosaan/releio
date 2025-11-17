@@ -42,13 +42,13 @@ Use timestamps to track progress. Update this section at every stopping point.
   - [x] Add tooltip with detailed breakdown
   - [x] Poll backend for token count on message changes (every 3 seconds)
 
-- [ ] Milestone 4: Manual Compression UI
-  - [ ] Add "Compress Conversation" button to ChatPanel
-  - [ ] Show button only when compression is beneficial (> threshold)
-  - [ ] Create `CompressionConfirmDialog.tsx` component
-  - [ ] Show preview: messages to compress, expected new token count
-  - [ ] Implement compression execution with progress indicator
-  - [ ] Handle errors gracefully with user-friendly messages
+- [x] Milestone 4: Manual Compression UI (Completed: 2025-11-17)
+  - [x] Add "Compress Conversation" button to ChatPanel
+  - [x] Show button only when compression is beneficial (> threshold)
+  - [x] Create `CompressionConfirmDialog.tsx` component
+  - [x] Show preview: messages to compress, expected new token count
+  - [x] Implement compression execution with progress indicator
+  - [x] Handle errors gracefully with user-friendly messages
 
 - [ ] Milestone 5: Automatic Compression Integration
   - [ ] Integrate compression check before AI streaming
