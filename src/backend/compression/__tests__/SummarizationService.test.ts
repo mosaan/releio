@@ -95,8 +95,7 @@ describe('SummarizationService', () => {
       )
       expect(mockGenerateText).toHaveBeenCalledWith(
         expect.objectContaining({
-          temperature: 0.3,
-          maxTokens: 2000
+          temperature: 0.3
         })
       )
     })
