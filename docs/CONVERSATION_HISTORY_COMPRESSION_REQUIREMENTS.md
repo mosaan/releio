@@ -230,12 +230,14 @@ As a user, I want to manually compress conversation history at any time so that 
 #### 5.1 Summarization Failures
 - **FR-5.1.1**: If automatic summarization fails, the system MUST:
   - Log the error with full context
-  - Fall back to sending full conversation history (may result in AI provider error)
-  - Retry summarization on next request (with exponential backoff)
+  - Display error notification to user
+  - Provide option to retry summarization manually
+  - NOT proceed with sending full conversation history (would likely exceed context limits)
+  - Prevent further AI requests until compression succeeds or user acknowledges the risk
 - **FR-5.1.2**: If manual summarization fails, the system MUST:
   - Display error message to user
   - Provide option to retry
-  - Allow user to continue without summarization
+  - Allow user to continue at their own risk (with warning about potential context limit issues)
 
 #### 5.2 Token Counting Failures
 - **FR-5.2.1**: If token counting fails, the system MUST:
@@ -532,9 +534,11 @@ Conversation:
 - **FR-3.2.1 Note**: Removed (redundant after hybrid approach removal)
 - **FR-3.3.1**: Replaced tokenizer selection requirement with error handling only (tokenizer selection moved to FR-1.1.3 to eliminate duplication)
 - **FR-3.3.1 Note**: Added reference to FR-1.1.3 for tokenizer selection
+- **FR-5.1.1**: Removed dangerous fallback (sending full conversation history); added user notification and manual retry option; prevent further AI requests until resolved
+- **FR-5.1.2**: Updated to clarify user continues at own risk with warning
 - **Appendix A**: Removed provider-specific API examples; kept only local tiktoken example
 - **Rationale**: API response token counts are cumulative and unavailable before sending requests, making them unsuitable for compression decisions
-- **Consistency improvements**: Aligned modal verbs (MUST/SHOULD/MAY) across related requirements; eliminated duplicate definitions
+- **Consistency improvements**: Aligned modal verbs (MUST/SHOULD/MAY) across related requirements; eliminated duplicate definitions; removed unsafe fallback behaviors
 
 **Changes in v1.4:**
 - **FR-4.2.1**: Simplified summary content format to essential fields only (summaryText + messageRange)
