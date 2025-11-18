@@ -345,7 +345,10 @@ export class CompressionService {
   /**
    * Get detailed token usage breakdown for a session
    */
-  async getTokenBreakdown(sessionId: string): Promise<{
+  async getTokenBreakdown(
+    sessionId: string,
+    mcpTools?: Record<string, any>
+  ): Promise<{
     systemTokens: number
     summaryTokens: number
     regularMessageTokens: number
@@ -372,9 +375,14 @@ export class CompressionService {
       }
     }
 
-    // Note: Tool tokens calculation would require MCP server info
-    // For now, return 0 as it requires integration with MCP settings
-    const toolTokens = 0
+    // Calculate tool definition tokens if MCP tools are provided
+    let toolTokens = 0
+    if (mcpTools && Object.keys(mcpTools).length > 0) {
+      // Convert tool definitions to JSON string and count tokens
+      // This approximates how AI providers count tool definition tokens
+      const toolsJson = JSON.stringify(mcpTools)
+      toolTokens = this.tokenCounter.countText(toolsJson)
+    }
 
     return {
       systemTokens,

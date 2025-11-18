@@ -559,18 +559,24 @@ export class Handler {
         additionalInput
       )
 
+      // Get MCP tools for token calculation
+      const mcpTools = await mcpManager.getAllTools()
+
       // Get detailed token breakdown
-      const breakdown = await this._compressionService.getTokenBreakdown(sessionId)
+      const breakdown = await this._compressionService.getTokenBreakdown(sessionId, mcpTools)
+
+      // Calculate total tokens including tool definitions
+      const totalTokens = contextCheck.currentTokenCount + breakdown.toolTokens
 
       const tokenUsage: TokenUsageInfo = {
-        currentTokens: contextCheck.currentTokenCount,
+        currentTokens: totalTokens,
         maxTokens: contextCheck.contextLimit,
-        inputTokens: contextCheck.currentTokenCount, // Simplified for now
+        inputTokens: totalTokens,
         outputTokens: 0, // Not tracked separately in context check
         estimatedResponseTokens: contextCheck.estimatedResponseTokens,
-        utilizationPercentage: contextCheck.utilizationPercentage,
+        utilizationPercentage: (totalTokens / contextCheck.contextLimit) * 100,
         thresholdPercentage: (contextCheck.thresholdTokenCount / contextCheck.contextLimit) * 100,
-        needsCompression: contextCheck.needsCompression,
+        needsCompression: totalTokens > contextCheck.thresholdTokenCount,
         breakdown: {
           systemTokens: breakdown.systemTokens,
           summaryTokens: breakdown.summaryTokens,
