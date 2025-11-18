@@ -158,8 +158,8 @@ const ComposerAction: FC = () => {
 
 const UserMessage: FC = () => {
   return (
-    <MessagePrimitive.Root className="grid auto-rows-auto grid-cols-[1fr_auto] grid-rows-[auto_1fr] w-full max-w-[var(--thread-max-width)] py-4">
-      <div className="bg-muted text-foreground max-w-[calc(var(--thread-max-width)*0.8)] ml-auto break-words rounded-3xl px-5 py-2.5 col-start-2 row-start-1">
+    <MessagePrimitive.Root className="grid auto-rows-auto grid-cols-[1fr_auto_auto] grid-rows-[auto_1fr] relative w-full max-w-[var(--thread-max-width)] py-4">
+      <div className="bg-muted text-foreground max-w-[calc(var(--thread-max-width)*0.8)] break-words rounded-3xl px-5 py-2.5 col-span-2 col-start-2 row-start-1 my-1.5">
         <MessagePrimitive.Content />
       </div>
 
@@ -176,7 +176,7 @@ const UserActionBar: FC = () => {
       hideWhenRunning
       autohide="not-last"
       autohideFloat="single-branch"
-      className="text-muted-foreground flex gap-1 col-start-2 row-start-2 -mr-1 justify-end data-[floating]:bg-background data-[floating]:absolute data-[floating]:rounded-md data-[floating]:border data-[floating]:p-1 data-[floating]:shadow-sm"
+      className="text-muted-foreground flex gap-1 col-start-1 row-start-2 -mr-1 justify-end data-[floating]:bg-background data-[floating]:absolute data-[floating]:rounded-md data-[floating]:border data-[floating]:p-1 data-[floating]:shadow-sm"
     >
       <ActionBarPrimitive.Edit asChild>
         <TooltipIconButton tooltip="Edit">
