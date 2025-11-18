@@ -105,6 +105,13 @@ export interface ChatSessionWithMessages {
   color?: string | null
   metadata?: unknown
   messages: ChatMessageWithParts[]
+  compressionSummaries?: Array<{
+    id: string
+    content: string
+    messageCutoffId: string
+    tokenCount: number
+    createdAt: string
+  }>
 }
 
 export interface ChatMessageWithParts {

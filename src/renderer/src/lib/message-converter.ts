@@ -111,3 +111,54 @@ export function convertMessagesToThreadFormat(dbMessages: ChatMessageWithParts[]
 
   return sortedMessages.map(convertToThreadMessage)
 }
+
+/**
+ * Insert compression markers into thread messages based on compression summaries.
+ * Shows the most recent compression point in the conversation history.
+ */
+export function insertCompressionMarkers(
+  threadMessages: ThreadMessage[],
+  summaries: Array<{ id: string; content: string; messageCutoffId: string; tokenCount: number; createdAt: string }>
+): ThreadMessage[] {
+  if (!summaries || summaries.length === 0) {
+    return threadMessages
+  }
+
+  // Find the most recent summary (summaries are ordered by createdAt desc from backend)
+  const latestSummary = summaries[0]
+
+  // Find the index of the message matching the cutoff ID
+  const cutoffIndex = threadMessages.findIndex(msg => msg.id === latestSummary.messageCutoffId)
+
+  if (cutoffIndex === -1) {
+    // Cutoff message not found, return original messages
+    console.warn('[insertCompressionMarkers] Cutoff message not found', {
+      messageCutoffId: latestSummary.messageCutoffId,
+      availableMessageIds: threadMessages.map(m => m.id)
+    })
+    return threadMessages
+  }
+
+  // Create a compression marker as a system message
+  const compressionMarker: ThreadMessage = {
+    id: `compression-marker-${latestSummary.id}`,
+    role: 'system',
+    content: [{
+      type: 'text',
+      text: `📦 Conversation history compressed (${latestSummary.tokenCount} tokens)`
+    }],
+    createdAt: new Date(latestSummary.createdAt),
+    metadata: {
+      custom: {
+        isCompressionMarker: true,
+        summaryContent: latestSummary.content
+      }
+    }
+  }
+
+  // Insert the marker after the cutoff message
+  const result = [...threadMessages]
+  result.splice(cutoffIndex + 1, 0, compressionMarker)
+
+  return result
+}

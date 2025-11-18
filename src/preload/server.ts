@@ -74,6 +74,14 @@ export class Server {
     deleteMessagesAfter: (...args) => this._invoke('deleteMessagesAfter', ...args),
     getLastSessionId: (...args) => this._invoke('getLastSessionId', ...args),
     setLastSessionId: (...args) => this._invoke('setLastSessionId', ...args),
+    // Compression APIs
+    getCompressionSettings: (...args) => this._invoke('getCompressionSettings', ...args),
+    setCompressionSettings: (...args) => this._invoke('setCompressionSettings', ...args),
+    getTokenUsage: (...args) => this._invoke('getTokenUsage', ...args),
+    checkCompressionNeeded: (...args) => this._invoke('checkCompressionNeeded', ...args),
+    getCompressionPreview: (...args) => this._invoke('getCompressionPreview', ...args),
+    compressConversation: (...args) => this._invoke('compressConversation', ...args),
+    getCompressionSummaries: (...args) => this._invoke('getCompressionSummaries', ...args),
     onEvent: (channel: string, callback: (appEvent: AppEvent) => void) => {
       this._backendConnection!.onEvent(channel, callback)
     },

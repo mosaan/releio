@@ -1,22 +1,28 @@
 import { useEffect, useState } from 'react'
-import { Settings, AlertCircle } from 'lucide-react'
+import { Settings, AlertCircle, Archive } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
 import { Thread } from '@renderer/components/assistant-ui/thread'
 import { AIRuntimeProvider } from '@renderer/components/AIRuntimeProvider'
 import { ModelSelector } from '@renderer/components/ModelSelector'
+import { TokenUsageIndicator } from '@renderer/components/TokenUsageIndicator'
+import { CompressionConfirmDialog } from '@renderer/components/CompressionConfirmDialog'
 import { Alert, AlertDescription, AlertTitle } from '@renderer/components/ui/alert'
 import { useSessionManager } from '@renderer/contexts/SessionManager'
-import type { AISettingsV2, AIModelSelection } from '@common/types'
+import type { AISettingsV2, AIModelSelection, CompressionResult } from '@common/types'
 import { isOk } from '@common/result'
+import { logger } from '@renderer/lib/logger'
 
 interface ChatPanelProps {
   onSettings: () => void
 }
 
 export function ChatPanel({ onSettings }: ChatPanelProps): React.JSX.Element {
-  const { currentSession, currentSessionId, modelSelection, setModelSelection, updateSession, refreshSessions } = useSessionManager()
+  const { currentSession, currentSessionId, modelSelection, setModelSelection, updateSession, refreshSessions, refreshCurrentSession } = useSessionManager()
   const [hasProviderConfigs, setHasProviderConfigs] = useState<boolean>(true)
   const [hasAvailableModels, setHasAvailableModels] = useState<boolean>(true)
+  const [compressionNeeded, setCompressionNeeded] = useState<boolean>(false)
+  const [showCompressionDialog, setShowCompressionDialog] = useState<boolean>(false)
+  const [apiKey, setApiKey] = useState<string>('')
 
   // Handle model selection change and persist to database
   const handleModelChange = async (newSelection: AIModelSelection | null) => {
@@ -71,6 +77,61 @@ export function ChatPanel({ onSettings }: ChatPanelProps): React.JSX.Element {
     checkProviderConfigs()
   }, [modelSelection, setModelSelection])
 
+  // Check if compression is needed and get API key when session or model changes
+  useEffect(() => {
+    const checkCompression = async (): Promise<void> => {
+      if (!currentSessionId || !modelSelection) {
+        setCompressionNeeded(false)
+        return
+      }
+
+      try {
+        // Get provider configuration to get provider type, model name, and API key
+        const configResult = await window.backend.getProviderConfiguration(modelSelection.providerConfigId)
+        if (!isOk(configResult) || !configResult.value) {
+          return
+        }
+
+        const providerConfig = configResult.value
+        const provider = providerConfig.type
+        const model = modelSelection.modelId
+
+        // Store API key for compression
+        setApiKey(providerConfig.config.apiKey || '')
+
+        // Check if compression is needed
+        const result = await window.backend.checkCompressionNeeded(currentSessionId, provider, model)
+
+        if (isOk(result)) {
+          setCompressionNeeded(result.value)
+        }
+      } catch (err) {
+        logger.error('Error checking compression needed', { sessionId: currentSessionId, error: err })
+      }
+    }
+
+    checkCompression()
+  }, [
+    currentSessionId,
+    modelSelection,
+    currentSession?.updatedAt,
+    currentSession?.messageCount,
+    currentSession?.messages?.length,
+    currentSession?.messages?.[currentSession.messages.length - 1]?.id
+  ])
+
+  // Handle compression completion
+  const handleCompressionComplete = async (result: CompressionResult): Promise<void> => {
+    setShowCompressionDialog(false)
+
+    if (result.compressed) {
+      logger.info('Compression completed successfully', { result })
+      // Refresh the session to show updated messages and compression summaries
+      await refreshSessions()
+      await refreshCurrentSession()
+    }
+  }
+
   return (
     <div className="h-full flex flex-col bg-background">
       {/* Header */}
@@ -97,6 +158,22 @@ export function ChatPanel({ onSettings }: ChatPanelProps): React.JSX.Element {
                 </div>
               )}
             </div>
+            <TokenUsageIndicator sessionId={currentSessionId} modelSelection={modelSelection} currentSession={currentSession} />
+            {currentSessionId && modelSelection && apiKey && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowCompressionDialog(true)}
+                className={
+                  compressionNeeded
+                    ? 'flex items-center gap-1.5 text-orange-600 dark:text-orange-500 border-orange-200 dark:border-orange-800 hover:bg-orange-50 dark:hover:bg-orange-950/30'
+                    : 'flex items-center gap-1.5'
+                }
+              >
+                <Archive className="h-4 w-4" />
+                <span className="hidden sm:inline">Compress</span>
+              </Button>
+            )}
             <Button variant="ghost" size="icon" onClick={onSettings} className="h-9 w-9">
               <Settings className="h-4 w-4" />
             </Button>
@@ -163,7 +240,11 @@ export function ChatPanel({ onSettings }: ChatPanelProps): React.JSX.Element {
                   modelSelection={modelSelection}
                   chatSessionId={currentSession?.id}
                   initialMessages={currentSession?.messages}
-                  onMessageCompleted={refreshSessions}
+                  currentSession={currentSession}
+                  onMessageCompleted={async () => {
+                    await refreshSessions()
+                    await refreshCurrentSession()
+                  }}
                 >
                   <Thread />
                 </AIRuntimeProvider>
@@ -179,6 +260,18 @@ export function ChatPanel({ onSettings }: ChatPanelProps): React.JSX.Element {
           </>
         )}
       </main>
+
+      {/* Compression Dialog */}
+      {currentSessionId && modelSelection && apiKey && (
+        <CompressionConfirmDialog
+          open={showCompressionDialog}
+          sessionId={currentSessionId}
+          modelSelection={modelSelection}
+          apiKey={apiKey}
+          onConfirm={handleCompressionComplete}
+          onCancel={() => setShowCompressionDialog(false)}
+        />
+      )}
     </div>
   )
 }

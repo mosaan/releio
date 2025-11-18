@@ -6,6 +6,15 @@ import { ChatSessionStore } from '@backend/session/ChatSessionStore'
 import { ModelConfigService, type ModelConfig } from '../ModelConfigService'
 import { createTestDatabaseWithChatTables } from '../../../../tests/backend/database-helper'
 import type { ChatMessageWithParts } from '@common/chat-types'
+import { getSetting } from '@backend/settings'
+
+// Mock the settings module
+vi.mock('@backend/settings', () => ({
+  getSetting: vi.fn(),
+  setSetting: vi.fn(),
+  getAllSettings: vi.fn(),
+  clearSetting: vi.fn()
+}))
 
 describe('CompressionService', () => {
   let service: CompressionService
@@ -32,6 +41,9 @@ describe('CompressionService', () => {
     modelConfigService = {
       getConfig: vi.fn()
     } as any
+
+    // Mock settings to return undefined (no user settings, use defaults)
+    vi.mocked(getSetting).mockResolvedValue(undefined)
 
     // Create service
     service = new CompressionService(
@@ -84,7 +96,7 @@ describe('CompressionService', () => {
       expect(result.contextLimit).toBe(128000)
       expect(result.thresholdTokenCount).toBe(128000 * 0.95)
       expect(result.utilizationPercentage).toBeLessThan(1)
-      expect(result.retentionTokenBudget).toBe(8000)
+      expect(result.retentionTokenBudget).toBe(2000) // User setting default
     })
 
     it('should include additional input in token count', async () => {
@@ -240,6 +252,13 @@ describe('CompressionService', () => {
         '## Summary\nThis is a test summary of the conversation.'
       )
 
+      // Mock user settings to match the test's intent (low threshold)
+      vi.mocked(getSetting).mockResolvedValue({
+        threshold: 0.3,
+        retentionTokens: 100,
+        autoCompress: true
+      })
+
       const result = await service.autoCompress({
         sessionId,
         provider: 'test',
@@ -288,6 +307,13 @@ describe('CompressionService', () => {
       }
       ;(modelConfigService.getConfig as any).mockResolvedValue(mockConfig)
       ;(summarizationService.summarize as any).mockResolvedValue('## Summary\nForced summary')
+
+      // Mock user settings with small retention to ensure compression
+      vi.mocked(getSetting).mockResolvedValue({
+        threshold: 0.95,
+        retentionTokens: 30,
+        autoCompress: true
+      })
 
       const result = await service.autoCompress({
         sessionId,
@@ -385,6 +411,13 @@ describe('CompressionService', () => {
         '## Summary\nCombined summary with previous context'
       )
 
+      // Mock user settings to match test intent
+      vi.mocked(getSetting).mockResolvedValue({
+        threshold: 0.3,
+        retentionTokens: 100,
+        autoCompress: true
+      })
+
       const result = await service.autoCompress({
         sessionId,
         provider: 'test',
@@ -433,6 +466,13 @@ describe('CompressionService', () => {
       }
       ;(modelConfigService.getConfig as any).mockResolvedValue(mockConfig)
       ;(summarizationService.summarize as any).mockResolvedValue('## Summary\nManual summary')
+
+      // Mock user settings with small retention to ensure compression
+      vi.mocked(getSetting).mockResolvedValue({
+        threshold: 0.95,
+        retentionTokens: 30,
+        autoCompress: true
+      })
 
       const result = await service.manualCompress({
         sessionId,

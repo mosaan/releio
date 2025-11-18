@@ -15,6 +15,7 @@ import { AISettingsV2Component } from './AISettings'
 import { ProxySettings } from './ProxySettings'
 import { MCPSettings } from './MCPSettings'
 import { CertificateSettings } from './CertificateSettings'
+import { CompressionSettings } from './CompressionSettings'
 
 interface SettingsProps {
   onBack: () => void
@@ -164,6 +165,8 @@ export function Settings({ onBack }: SettingsProps): React.JSX.Element {
           <AISettingsV2Component className="shadow-sm" />
 
           <MCPSettings className="shadow-sm" />
+
+          <CompressionSettings className="shadow-sm" />
 
           <ProxySettings className="shadow-sm" />
 

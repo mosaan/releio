@@ -10,6 +10,15 @@ import { createClient } from '@libsql/client'
 import { migrate } from 'drizzle-orm/libsql/migrator'
 import * as path from 'path'
 import * as fs from 'fs'
+import { getSetting } from '@backend/settings'
+
+// Mock the settings module
+vi.mock('@backend/settings', () => ({
+  getSetting: vi.fn(),
+  setSetting: vi.fn(),
+  getAllSettings: vi.fn(),
+  clearSetting: vi.fn()
+}))
 
 describe('Compression Integration Tests', () => {
   let service: CompressionService
@@ -44,6 +53,9 @@ describe('Compression Integration Tests', () => {
     summarizationService = {
       summarize: vi.fn()
     } as any
+
+    // Mock settings to return undefined (no user settings, use defaults)
+    vi.mocked(getSetting).mockResolvedValue(undefined)
 
     // Create compression service
     service = new CompressionService(

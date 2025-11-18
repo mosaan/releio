@@ -187,6 +187,111 @@ export interface BackendListenerAPI {
   offEvent: (channel: string) => void
 }
 
+// Compression Types
+
+/**
+ * User-configurable compression settings for a chat session.
+ */
+export interface CompressionSettings {
+  /** Compression threshold as a percentage (0.70 to 1.00) */
+  threshold: number
+  /** Number of recent tokens to retain after compression */
+  retentionTokens: number
+  /** Whether to automatically compress when threshold is exceeded */
+  autoCompress: boolean
+}
+
+/**
+ * Current token usage information for a chat session.
+ */
+export interface TokenUsageInfo {
+  /** Total current tokens (input + output) */
+  currentTokens: number
+  /** Maximum tokens allowed by the model */
+  maxTokens: number
+  /** Input tokens (user messages + system + summaries) */
+  inputTokens: number
+  /** Output tokens (assistant messages) */
+  outputTokens: number
+  /** Estimated tokens for next AI response */
+  estimatedResponseTokens: number
+  /** Utilization percentage (currentTokens / maxTokens) */
+  utilizationPercentage: number
+  /** Compression threshold percentage */
+  thresholdPercentage: number
+  /** Whether compression is needed */
+  needsCompression: boolean
+  /** Detailed breakdown of token usage */
+  breakdown?: {
+    /** System message tokens (if any) */
+    systemTokens: number
+    /** Summary tokens (from compression) */
+    summaryTokens: number
+    /** Regular message tokens (after summary cutoff) */
+    regularMessageTokens: number
+    /** Tool use tokens (MCP tool definitions) */
+    toolTokens: number
+    /** Current input tokens (user typing in chat) */
+    currentInputTokens: number
+  }
+}
+
+/**
+ * Preview of what will happen during compression.
+ */
+export interface CompressionPreview {
+  /** Number of messages that will be compressed */
+  messagesToCompress: number
+  /** Current total token count */
+  currentTokens: number
+  /** Expected token count after compression */
+  expectedNewTokens: number
+  /** Expected token savings */
+  tokenSavings: number
+  /** Token savings as a percentage */
+  savingsPercentage: number
+  /** Whether compression is possible */
+  canCompress: boolean
+  /** Reason if compression is not possible */
+  reason?: string
+}
+
+/**
+ * Result of a compression operation.
+ */
+export interface CompressionResult {
+  /** Whether compression was performed */
+  compressed: boolean
+  /** ID of the created summary snapshot (if compressed) */
+  summaryId?: string
+  /** Number of messages compressed */
+  messagesCompressed?: number
+  /** Original token count before compression */
+  originalTokenCount?: number
+  /** New token count after compression */
+  newTokenCount?: number
+  /** Compression ratio as a percentage */
+  compressionRatio?: number
+  /** Reason if compression was not performed */
+  reason?: string
+}
+
+/**
+ * A compression summary snapshot.
+ */
+export interface CompressionSummary {
+  /** Unique ID of the summary */
+  id: string
+  /** Summary text content */
+  content: string
+  /** ID of the last message included in the summary */
+  messageCutoffId: string
+  /** Token count of the summary */
+  tokenCount: number
+  /** Timestamp when summary was created */
+  createdAt: number
+}
+
 // Options for AI text streaming
 export interface StreamAIOptions {
   modelSelection?: AIModelSelection  // Use specific model selection (providerConfigId + modelId)
@@ -258,6 +363,35 @@ export interface RendererBackendAPI {
   deleteMessagesAfter: (sessionId: string, messageId: string) => Promise<Result<void>>
   getLastSessionId: () => Promise<Result<string | null>>
   setLastSessionId: (sessionId: string) => Promise<Result<void>>
+  // Compression APIs
+  getCompressionSettings: (sessionId: string) => Promise<Result<CompressionSettings>>
+  setCompressionSettings: (sessionId: string, settings: CompressionSettings) => Promise<Result<void, string>>
+  getTokenUsage: (
+    sessionId: string,
+    provider: string,
+    model: string,
+    additionalInput?: string
+  ) => Promise<Result<TokenUsageInfo, string>>
+  checkCompressionNeeded: (
+    sessionId: string,
+    provider: string,
+    model: string
+  ) => Promise<Result<boolean, string>>
+  getCompressionPreview: (
+    sessionId: string,
+    provider: string,
+    model: string,
+    retentionTokens?: number
+  ) => Promise<Result<CompressionPreview, string>>
+  compressConversation: (
+    sessionId: string,
+    provider: string,
+    model: string,
+    apiKey: string,
+    force?: boolean,
+    retentionTokenCount?: number
+  ) => Promise<Result<CompressionResult, string>>
+  getCompressionSummaries: (sessionId: string) => Promise<Result<CompressionSummary[], string>>
 }
 
 export interface RendererMainAPI {

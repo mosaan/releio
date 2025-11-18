@@ -40,6 +40,7 @@ export const Thread: FC = () => {
             UserMessage: UserMessage,
             EditComposer: EditComposer,
             AssistantMessage: AssistantMessage,
+            SystemMessage: SystemMessage,
           }}
         />
 
@@ -221,6 +222,18 @@ const AssistantMessage: FC = () => {
       <AssistantActionBar />
 
       <BranchPicker className="col-start-2 row-start-2 -ml-2 mr-2" />
+    </MessagePrimitive.Root>
+  );
+};
+
+const SystemMessage: FC = () => {
+  return (
+    <MessagePrimitive.Root className="w-full max-w-[var(--thread-max-width)] py-2">
+      <div className="flex items-center justify-center">
+        <div className="bg-muted/50 text-muted-foreground border-muted-foreground/20 max-w-[calc(var(--thread-max-width)*0.8)] break-words rounded-lg border px-4 py-2 text-center text-sm">
+          <MessagePrimitive.Content />
+        </div>
+      </div>
     </MessagePrimitive.Root>
   );
 };

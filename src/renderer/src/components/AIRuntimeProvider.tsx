@@ -4,19 +4,20 @@ import { ReactNode, useEffect, useCallback, useMemo, useRef } from 'react'
 import { logger } from '@renderer/lib/logger'
 import { streamText } from '@renderer/lib/ai'
 import type { AIModelSelection } from '@common/types'
-import type { AddMessageRequest, ChatMessageWithParts } from '@common/chat-types'
+import type { AddMessageRequest, ChatMessageWithParts, ChatSessionWithMessages } from '@common/chat-types'
 import { isOk } from '@common/result'
-import { convertMessagesToThreadFormat } from '@renderer/lib/message-converter'
+import { convertMessagesToThreadFormat, insertCompressionMarkers } from '@renderer/lib/message-converter'
 
 interface AIRuntimeProviderProps {
   children: ReactNode
   modelSelection: AIModelSelection | null
   chatSessionId?: string | null
   initialMessages?: ChatMessageWithParts[]
+  currentSession?: ChatSessionWithMessages | null
   onMessageCompleted?: () => void | Promise<void>
 }
 
-export function AIRuntimeProvider({ children, modelSelection, chatSessionId, initialMessages, onMessageCompleted }: AIRuntimeProviderProps): React.JSX.Element {
+export function AIRuntimeProvider({ children, modelSelection, chatSessionId, initialMessages, currentSession, onMessageCompleted }: AIRuntimeProviderProps): React.JSX.Element {
   // Keep reference to latest onMessageCompleted callback
   const onMessageCompletedRef = useRef(onMessageCompleted)
   useEffect(() => {
@@ -29,14 +30,82 @@ export function AIRuntimeProvider({ children, modelSelection, chatSessionId, ini
     sessionId: string | null | undefined
   ): ChatModelAdapter => ({
     async *run({ messages, abortSignal }) {
+      // Filter out compression markers (they're for display only, not for AI)
+      const messagesToSend = messages.filter((message: ThreadMessage) => {
+        // Exclude compression markers (system messages with isCompressionMarker metadata)
+        if (message.role === 'system' && message.metadata?.custom?.isCompressionMarker) {
+          return false
+        }
+        return true
+      })
+
       // Convert Assistant-ui messages to AIMessage format
-      const formattedMessages = messages.map((message: ThreadMessage) => ({
+      const formattedMessages = messagesToSend.map((message: ThreadMessage) => ({
         role: message.role as 'user' | 'assistant' | 'system',
         content: message.content
           .filter((part) => part.type === 'text')
           .map((part) => part.text)
           .join('')
       }))
+
+      // Check and perform automatic compression if needed (before saving user message)
+      if (sessionId && currentSelection) {
+        try {
+          // Get provider configuration
+          const configResult = await window.backend.getProviderConfiguration(currentSelection.providerConfigId)
+          if (isOk(configResult) && configResult.value) {
+            const providerConfig = configResult.value
+            const provider = providerConfig.type
+            const model = currentSelection.modelId
+            const apiKey = providerConfig.config.apiKey || ''
+
+            // Get compression settings to check if auto-compression is enabled
+            const settingsResult = await window.backend.getCompressionSettings(sessionId)
+            if (isOk(settingsResult) && settingsResult.value.autoCompress) {
+              // Check if compression is needed
+              const needsCompressionResult = await window.backend.checkCompressionNeeded(
+                sessionId,
+                provider,
+                model
+              )
+
+              if (isOk(needsCompressionResult) && needsCompressionResult.value) {
+                logger.info('[Compression] Auto-compression triggered', { sessionId })
+
+                // Perform compression
+                const compressionResult = await window.backend.compressConversation(
+                  sessionId,
+                  provider,
+                  model,
+                  apiKey,
+                  false // Don't force, respect threshold
+                )
+
+                if (isOk(compressionResult) && compressionResult.value.compressed) {
+                  logger.info('[Compression] Auto-compression completed successfully', {
+                    sessionId,
+                    result: compressionResult.value
+                  })
+                  // Note: Session will be reloaded after message completion
+                } else if (isOk(compressionResult)) {
+                  logger.info('[Compression] Auto-compression skipped', {
+                    sessionId,
+                    reason: compressionResult.value.reason
+                  })
+                } else {
+                  logger.error('[Compression] Auto-compression failed', {
+                    sessionId,
+                    error: compressionResult.error
+                  })
+                }
+              }
+            }
+          }
+        } catch (error) {
+          // Don't fail the message send if compression fails
+          logger.error('[Compression] Error during auto-compression check:', error)
+        }
+      }
 
       // Save user message to database before streaming (last message is the new user message)
       if (sessionId && formattedMessages.length > 0) {
@@ -135,7 +204,14 @@ export function AIRuntimeProvider({ children, modelSelection, chatSessionId, ini
 
       try {
         // Convert database messages directly to ThreadMessage format
-        const threadMessages = convertMessagesToThreadFormat(initialMessages)
+        let threadMessages = convertMessagesToThreadFormat(initialMessages)
+
+        // Insert compression markers if we have summaries
+        if (currentSession?.compressionSummaries && currentSession.compressionSummaries.length > 0) {
+          logger.info(`[History] Found ${currentSession.compressionSummaries.length} compression summaries`)
+          threadMessages = insertCompressionMarkers(threadMessages, currentSession.compressionSummaries)
+          logger.info(`[History] Inserted compression markers`)
+        }
 
         // Import messages into runtime
         runtime.threads.main.import(
@@ -153,7 +229,7 @@ export function AIRuntimeProvider({ children, modelSelection, chatSessionId, ini
         ExportedMessageRepository.fromArray([])
       )
     }
-  }, [chatSessionId, initialMessages, runtime])
+  }, [chatSessionId, initialMessages, currentSession?.compressionSummaries, runtime])
 
   return <AssistantRuntimeProvider runtime={runtime}>{children}</AssistantRuntimeProvider>
 }

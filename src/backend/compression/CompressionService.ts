@@ -2,8 +2,10 @@ import { TokenCounter } from './TokenCounter'
 import { SummarizationService } from './SummarizationService'
 import { ChatSessionStore } from '@backend/session/ChatSessionStore'
 import { ModelConfigService } from './ModelConfigService'
+import { getSetting } from '@backend/settings'
 import logger from '@backend/logger'
 import type { ChatMessageWithParts } from '@common/chat-types'
+import type { CompressionSettings } from '@common/types'
 
 const log = logger.child('compression:service')
 
@@ -53,6 +55,34 @@ export class CompressionService {
   ) {}
 
   /**
+   * Get compression settings for a session, with fallback to global defaults
+   */
+  private async getCompressionSettings(sessionId: string): Promise<CompressionSettings> {
+    // Try per-session settings first
+    const settingsKey = `compression:${sessionId}`
+    const sessionSettings = await getSetting<CompressionSettings>(settingsKey)
+
+    if (sessionSettings) {
+      return sessionSettings
+    }
+
+    // Fall back to global defaults
+    const globalKey = 'compression:global-defaults'
+    const globalSettings = await getSetting<CompressionSettings>(globalKey)
+
+    if (globalSettings) {
+      return globalSettings
+    }
+
+    // Final fallback: hard-coded defaults
+    return {
+      threshold: 0.95,
+      retentionTokens: 2000,
+      autoCompress: true
+    }
+  }
+
+  /**
    * Check if conversation context needs compression
    * Returns detailed analysis of current token usage
    */
@@ -66,6 +96,9 @@ export class CompressionService {
 
     // Get model configuration
     const config = await this.modelConfigService.getConfig(provider, model)
+
+    // Get user compression settings
+    const userSettings = await this.getCompressionSettings(sessionId)
 
     // Get session messages
     const session = await this.sessionStore.getSession(sessionId)
@@ -85,16 +118,16 @@ export class CompressionService {
       currentTokenCount += this.tokenCounter.countText(additionalInput)
     }
 
-    // Calculate thresholds
+    // Calculate thresholds using user settings
     const contextLimit = config.maxInputTokens
-    const thresholdTokenCount = Math.floor(contextLimit * config.defaultCompressionThreshold)
+    const thresholdTokenCount = Math.floor(contextLimit * userSettings.threshold)
     const utilizationPercentage = (currentTokenCount / contextLimit) * 100
 
     // Determine if compression is needed
     const needsCompression = currentTokenCount > thresholdTokenCount
 
-    // Calculate retention budget
-    const retentionTokenBudget = config.recommendedRetentionTokens
+    // Calculate retention budget using user settings
+    const retentionTokenBudget = userSettings.retentionTokens
 
     // Count how many messages would be retained vs compressed
     let retainedTokens = 0
@@ -149,6 +182,9 @@ export class CompressionService {
     // Get model configuration
     const config = await this.modelConfigService.getConfig(provider, model)
 
+    // Get user compression settings
+    const userSettings = await this.getCompressionSettings(sessionId)
+
     // Get session messages
     const session = await this.sessionStore.getSession(sessionId)
     if (!session) {
@@ -184,8 +220,8 @@ export class CompressionService {
       }
     }
 
-    // Determine retention boundary
-    const retentionBudget = retentionTokenCount ?? config.recommendedRetentionTokens
+    // Determine retention boundary using user settings (allow override via parameter)
+    const retentionBudget = retentionTokenCount ?? userSettings.retentionTokens
 
     // Calculate which messages to retain (from the end)
     let retainedTokens = 0
@@ -304,6 +340,56 @@ export class CompressionService {
    */
   async buildContextForAI(sessionId: string): Promise<ChatMessageWithParts[]> {
     return this.sessionStore.buildAIContext(sessionId)
+  }
+
+  /**
+   * Get detailed token usage breakdown for a session
+   */
+  async getTokenBreakdown(
+    sessionId: string,
+    mcpTools?: Record<string, any>
+  ): Promise<{
+    systemTokens: number
+    summaryTokens: number
+    regularMessageTokens: number
+    toolTokens: number
+  }> {
+    // Get AI context (includes summary if exists)
+    const contextMessages = await this.sessionStore.buildAIContext(sessionId)
+
+    let systemTokens = 0
+    let summaryTokens = 0
+    let regularMessageTokens = 0
+
+    for (const msg of contextMessages) {
+      if (msg.role === 'system') {
+        const tokens = this.tokenCounter.countMessageTokens(msg)
+        // System messages from compression are identified by their ID pattern
+        if (msg.id.startsWith('summary-')) {
+          summaryTokens += tokens
+        } else {
+          systemTokens += tokens
+        }
+      } else {
+        regularMessageTokens += this.tokenCounter.countMessageTokens(msg)
+      }
+    }
+
+    // Calculate tool definition tokens if MCP tools are provided
+    let toolTokens = 0
+    if (mcpTools && Object.keys(mcpTools).length > 0) {
+      // Convert tool definitions to JSON string and count tokens
+      // This approximates how AI providers count tool definition tokens
+      const toolsJson = JSON.stringify(mcpTools)
+      toolTokens = this.tokenCounter.countText(toolsJson)
+    }
+
+    return {
+      systemTokens,
+      summaryTokens,
+      regularMessageTokens,
+      toolTokens
+    }
   }
 
   /**
