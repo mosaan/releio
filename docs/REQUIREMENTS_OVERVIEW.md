@@ -30,11 +30,11 @@ Releioは、複数のAIプロバイダーと統合し、Model Context Protocol (
 
 ## 2. ユースケース図
 
-以下のPlantUMLダイアグラムは、Releioの全体的なユースケース（合計33個）を示しています。
+以下のPlantUMLダイアグラムは、Releioの全体的なユースケース（合計32個）を示しています。
 
 **ユースケースの分類:**
 - **主ユースケース（22個）**: ユーザーが直接実行する操作（User --> の関係）
-- **内部処理（6個）**: 主ユースケースに含まれるシステム自動処理（<<include>> 関係）
+- **内部処理（5個）**: 主ユースケースに含まれるシステム自動処理（<<include>> 関係）
 - **条件付き拡張（5個）**: 特定条件下で発生する追加機能（<<extend>> 関係）
 
 ```plantuml
@@ -62,24 +62,20 @@ rectangle "Releio システム" {
       usecase "UC-CHAT-03: モデル選択の永続化" as UCCHAT03
     }
 
-    package "メッセージ送信" {
+    package "メッセージ送信・応答受信" {
       usecase "UC-CHAT-04: メッセージを送信する" as UCCHAT04
-      usecase "UC-CHAT-05: 送信前の自動圧縮" as UCCHAT05
-      usecase "UC-CHAT-06: メッセージの永続化" as UCCHAT06
-    }
-
-    package "応答受信" {
-      usecase "UC-CHAT-07: ストリーミング応答を受信する" as UCCHAT07
-      usecase "UC-CHAT-08: セッション履歴の復元" as UCCHAT08
-      usecase "UC-CHAT-09: ストリーミングの中断" as UCCHAT09
-      usecase "UC-CHAT-10: 圧縮マーカーの表示" as UCCHAT10
+      usecase "UC-CHAT-05: メッセージの永続化" as UCCHAT05
+      usecase "UC-CHAT-06: ストリーミング応答を受信する" as UCCHAT06
+      usecase "UC-CHAT-07: セッション履歴の復元" as UCCHAT07
+      usecase "UC-CHAT-08: ストリーミングの中断" as UCCHAT08
+      usecase "UC-CHAT-09: 圧縮マーカーの表示" as UCCHAT09
+      usecase "UC-CHAT-10: ツール呼び出しを確認する" as UCCHAT10
     }
 
     package "エラーハンドリング" {
-      usecase "UC-CHAT-11: エラーハンドリング" as UCCHAT11
-      usecase "UC-CHAT-12: エラー時のメッセージ復元" as UCCHAT12
-      usecase "UC-CHAT-13: エラー診断と詳細表示" as UCCHAT13
-      usecase "UC-CHAT-14: メッセージ再送信" as UCCHAT14
+      usecase "UC-CHAT-11: エラー時のメッセージ復元" as UCCHAT11
+      usecase "UC-CHAT-12: エラー診断と詳細表示" as UCCHAT12
+      usecase "UC-CHAT-13: メッセージ再送信" as UCCHAT13
     }
   }
 
@@ -121,7 +117,7 @@ User --> UCPROV05
 ' AI会話
 User --> UCCHAT01
 User --> UCCHAT04
-User --> UCCHAT09
+User --> UCCHAT08
 
 ' セッション管理
 User --> UCSESS01
@@ -151,36 +147,36 @@ UCCHAT01 ..> UCCHAT02 : <<include>>
 UCCHAT01 ..> UCCHAT03 : <<include>>
 
 ' メッセージ送信に含まれる処理
+UCCHAT04 ..> UCCHAT05 : <<include>>
 UCCHAT04 ..> UCCHAT06 : <<include>>
-UCCHAT04 ..> UCCHAT07 : <<include>>
+
+' トークン制限時の会話履歴圧縮（条件付きinclude）
+UCCHAT04 ..> UCSESS04 : <<include>>
 
 ' セッション表示・チャット開始時の履歴復元
-UCSESS02 ..> UCCHAT08 : <<include>>
-UCCHAT01 ..> UCCHAT08 : <<include>>
+UCSESS02 ..> UCCHAT07 : <<include>>
+UCCHAT01 ..> UCCHAT07 : <<include>>
 
 ' 履歴復元時の圧縮マーカー表示
-UCCHAT08 ..> UCCHAT10 : <<include>>
+UCCHAT07 ..> UCCHAT09 : <<include>>
 
 ' ========== 条件付き拡張（<<extend>>関係） ==========
-' 送信前の自動圧縮（トークン制限時のみ）
-UCCHAT05 ..> UCCHAT04 : <<extend>>
-
 ' ツール呼び出し確認（MCP利用時のみ）
-UCCHAT11 ..> UCCHAT07 : <<extend>>
+UCCHAT10 ..> UCCHAT06 : <<extend>>
 
 ' エラーハンドリング（エラー発生時のみ）
+UCCHAT11 ..> UCCHAT04 : <<extend>>
 UCCHAT12 ..> UCCHAT04 : <<extend>>
 UCCHAT13 ..> UCCHAT04 : <<extend>>
-UCCHAT14 ..> UCCHAT04 : <<extend>>
 
 ' ========== 外部システムとの関連 ==========
 UCPROV04 --> AIProvider : API呼び出し
 UCCHAT02 --> AIProvider : 設定検証
 UCCHAT04 --> AIProvider : メッセージ送信
-UCCHAT05 --> AIProvider : トークン数確認
-UCCHAT07 --> AIProvider : ストリーミング受信
-UCCHAT08 --> AIProvider : 履歴読み込み
-UCCHAT11 --> MCPServer : ツール実行
+UCCHAT06 --> AIProvider : ストリーミング受信
+UCCHAT07 --> AIProvider : 履歴読み込み
+UCCHAT10 --> MCPServer : ツール実行
+UCSESS04 --> AIProvider : トークン数確認
 UCMCP01 --> MCPServer : 接続確立
 UCMCP03 --> MCPServer : ツール取得
 UCMCP04 --> MCPServer : リソース取得
@@ -201,17 +197,16 @@ UCNET03 --> AIProvider : テスト接続
 | UC-CHAT-01 | チャットを開始する | ユーザー | プロバイダーとモデルを選択してチャットセッションを開始する |
 | UC-CHAT-02 | チャット使用前の検証 | <<include>> | （UC-CHAT-01に含まれる）プロバイダー設定とモデルの存在を確認し、チャット使用可能性を検証する |
 | UC-CHAT-03 | モデル選択の永続化 | <<include>> | （UC-CHAT-01に含まれる）選択したモデルをlocalStorageに保存し、次回起動時に復元する |
-| UC-CHAT-04 | メッセージを送信する | ユーザー | AIに対してメッセージを送信する |
-| UC-CHAT-05 | 送信前の自動圧縮 | <<extend>> | （UC-CHAT-04の拡張）トークン制限時に会話履歴を自動圧縮する |
-| UC-CHAT-06 | メッセージの永続化 | <<include>> | （UC-CHAT-04に含まれる）ユーザーメッセージとAI応答をデータベースに保存する |
-| UC-CHAT-07 | ストリーミング応答を受信する | <<include>> | （UC-CHAT-04に含まれる）AIからのストリーミング形式の応答をリアルタイムで受信する |
-| UC-CHAT-08 | セッション履歴の復元 | <<include>> | （UC-CHAT-01, UC-SESS-02に含まれる）過去のチャットセッションのメッセージ履歴を読み込み、画面に表示する |
-| UC-CHAT-09 | ストリーミングの中断 | ユーザー | AI応答のストリーミング中に生成を中断する |
-| UC-CHAT-10 | 圧縮マーカーの表示 | <<include>> | （UC-CHAT-08に含まれる）会話履歴が圧縮された箇所にマーカーを表示し、要約内容を確認できるようにする |
-| UC-CHAT-11 | ツール呼び出しを確認する | <<extend>> | （UC-CHAT-07の拡張）AIがMCPツールを実行する際の詳細情報を表示する |
-| UC-CHAT-12 | エラー時のメッセージ復元 | <<extend>> | （UC-CHAT-04の拡張）メッセージ送信が失敗した場合、失敗したメッセージを入力フィールドに自動復元する |
-| UC-CHAT-13 | エラー診断と詳細表示 | <<extend>> | （UC-CHAT-04の拡張）エラーの種類を分類し、詳細情報と推奨対処法を表示する |
-| UC-CHAT-14 | メッセージ再送信 | <<extend>> | （UC-CHAT-04の拡張）失敗したメッセージを編集または修正して再送信する |
+| UC-CHAT-04 | メッセージを送信する | ユーザー | AIに対してメッセージを送信する（トークン制限時はUC-SESS-04を含む） |
+| UC-CHAT-05 | メッセージの永続化 | <<include>> | （UC-CHAT-04に含まれる）ユーザーメッセージとAI応答をデータベースに保存する |
+| UC-CHAT-06 | ストリーミング応答を受信する | <<include>> | （UC-CHAT-04に含まれる）AIからのストリーミング形式の応答をリアルタイムで受信する |
+| UC-CHAT-07 | セッション履歴の復元 | <<include>> | （UC-CHAT-01, UC-SESS-02に含まれる）過去のチャットセッションのメッセージ履歴を読み込み、画面に表示する |
+| UC-CHAT-08 | ストリーミングの中断 | ユーザー | AI応答のストリーミング中に生成を中断する |
+| UC-CHAT-09 | 圧縮マーカーの表示 | <<include>> | （UC-CHAT-07に含まれる）会話履歴が圧縮された箇所にマーカーを表示し、要約内容を確認できるようにする |
+| UC-CHAT-10 | ツール呼び出しを確認する | <<extend>> | （UC-CHAT-06の拡張）AIがMCPツールを実行する際の詳細情報を表示する |
+| UC-CHAT-11 | エラー時のメッセージ復元 | <<extend>> | （UC-CHAT-04の拡張）メッセージ送信が失敗した場合、失敗したメッセージを入力フィールドに自動復元する |
+| UC-CHAT-12 | エラー診断と詳細表示 | <<extend>> | （UC-CHAT-04の拡張）エラーの種類を分類し、詳細情報と推奨対処法を表示する |
+| UC-CHAT-13 | メッセージ再送信 | <<extend>> | （UC-CHAT-04の拡張）失敗したメッセージを編集または修正して再送信する |
 | UC-SESS-01 | 新しいセッションを作成する | ユーザー | 新しいチャット会話セッションを開始する |
 | UC-SESS-02 | 過去のセッションを表示する | ユーザー | 保存された過去のチャットセッションを一覧表示・選択する |
 | UC-SESS-03 | セッションを削除する | ユーザー | 不要なチャットセッションを削除する |
@@ -283,7 +278,7 @@ UCNET03 --> AIProvider : テスト接続
 個々のユースケースの詳細な要件記述（EARSフォーマット）は、以下のドキュメントを参照してください：
 
 - [UC-PROV-01 〜 UC-PROV-05: AIプロバイダー管理要件](./REQUIREMENTS_AI_PROVIDER.md)
-- [UC-CHAT-01 〜 UC-CHAT-14: AI会話要件](./REQUIREMENTS_AI_CHAT.md)
+- [UC-CHAT-01 〜 UC-CHAT-13: AI会話要件](./REQUIREMENTS_AI_CHAT.md)
 - [UC-SESS-01 〜 UC-SESS-04: チャットセッション管理要件](./REQUIREMENTS_SESSION.md)
 - [UC-MCP-01 〜 UC-MCP-04: MCPサーバー管理要件](./REQUIREMENTS_MCP.md)
 - [UC-NET-01 〜 UC-NET-03: ネットワーク設定要件](./REQUIREMENTS_NETWORK.md)
