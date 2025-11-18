@@ -30,6 +30,12 @@ export function AIRuntimeProvider({ children, modelSelection, chatSessionId, ini
     sessionId: string | null | undefined
   ): ChatModelAdapter => ({
     async *run({ messages, abortSignal }) {
+      logger.info('[AIAdapter] run() called', {
+        messageCount: messages.length,
+        sessionId,
+        lastMessageRole: messages[messages.length - 1]?.role
+      })
+
       // Filter out compression markers (they're for display only, not for AI)
       const messagesToSend = messages.filter((message: ThreadMessage) => {
         // Exclude compression markers (system messages with isCompressionMarker metadata)
@@ -110,6 +116,12 @@ export function AIRuntimeProvider({ children, modelSelection, chatSessionId, ini
       // Save user message to database before streaming (last message is the new user message)
       if (sessionId && formattedMessages.length > 0) {
         const lastMessage = formattedMessages[formattedMessages.length - 1]
+        logger.info('[DB] Checking if user message should be saved', {
+          sessionId,
+          lastMessageRole: lastMessage.role,
+          hasContent: !!lastMessage.content,
+          contentLength: lastMessage.content?.length
+        })
         if (lastMessage.role === 'user' && lastMessage.content) {
           try {
             const messageRequest: AddMessageRequest = {
@@ -117,16 +129,30 @@ export function AIRuntimeProvider({ children, modelSelection, chatSessionId, ini
               role: 'user',
               parts: [{ kind: 'text', content: lastMessage.content }]
             }
+            logger.info('[DB] Saving user message to database', {
+              sessionId,
+              contentPreview: lastMessage.content.substring(0, 50)
+            })
             const result = await window.backend.addChatMessage(messageRequest)
             if (isOk(result)) {
-              logger.info(`[DB] User message saved: ${result.value}`)
+              logger.info(`[DB] User message saved successfully: ${result.value}`)
             } else {
               logger.error('[DB] Failed to save user message:', result.error)
             }
           } catch (error) {
             logger.error('[DB] Error saving user message:', error)
           }
+        } else {
+          logger.warn('[DB] User message not saved - conditions not met', {
+            isUser: lastMessage.role === 'user',
+            hasContent: !!lastMessage.content
+          })
         }
+      } else {
+        logger.warn('[DB] User message not saved - no session or messages', {
+          hasSessionId: !!sessionId,
+          messageCount: formattedMessages.length
+        })
       }
 
       const selectionInfo = currentSelection
