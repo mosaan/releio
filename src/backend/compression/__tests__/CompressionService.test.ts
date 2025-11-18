@@ -5,7 +5,6 @@ import { SummarizationService } from '../SummarizationService'
 import { ChatSessionStore } from '@backend/session/ChatSessionStore'
 import { ModelConfigService, type ModelConfig } from '../ModelConfigService'
 import { createTestDatabaseWithChatTables } from '../../../../tests/backend/database-helper'
-import type { ChatMessageWithParts } from '@common/chat-types'
 import { getSetting } from '@backend/settings'
 
 // Mock the settings module

@@ -280,7 +280,7 @@ describe('ChatSessionStore - Compression Extensions', () => {
 
     it('should include all messages after cutoff in context', async () => {
       const sessionId = await store.createSession({ title: 'Test Session' })
-      const msg1 = await store.addMessage({
+      await store.addMessage({
         sessionId,
         role: 'user',
         parts: [{ kind: 'text', content: 'Message 1' }]

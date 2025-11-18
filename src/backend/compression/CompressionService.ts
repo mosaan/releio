@@ -180,7 +180,7 @@ export class CompressionService {
     log.info('Starting auto-compression', { sessionId, provider, model, force })
 
     // Get model configuration
-    const config = await this.modelConfigService.getConfig(provider, model)
+    await this.modelConfigService.getConfig(provider, model)
 
     // Get user compression settings
     const userSettings = await this.getCompressionSettings(sessionId)
@@ -297,8 +297,6 @@ export class CompressionService {
 
     // Calculate compression results
     const originalTokens = this.tokenCounter.countConversationTokens(messages).totalTokens
-    const compressedMessagesTokens =
-      this.tokenCounter.countConversationTokens(messagesToCompress).totalTokens
     const retainedMessagesTokens =
       this.tokenCounter.countConversationTokens(messages.slice(retentionIndex)).totalTokens
     const newTokenCount = summaryTokens + retainedMessagesTokens
