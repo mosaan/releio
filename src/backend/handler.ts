@@ -502,7 +502,7 @@ export class Handler {
   // Compression handlers
 
   async getCompressionSettings(sessionId: string): Promise<Result<CompressionSettings>> {
-    // Get per-session settings, or fall back to defaults
+    // Try per-session settings first
     const settingsKey = `compression:${sessionId}`
     const sessionSettings = await getSetting<CompressionSettings>(settingsKey)
 
@@ -510,7 +510,15 @@ export class Handler {
       return ok(sessionSettings)
     }
 
-    // Return defaults
+    // Fall back to global defaults
+    const globalKey = 'compression:global-defaults'
+    const globalSettings = await getSetting<CompressionSettings>(globalKey)
+
+    if (globalSettings) {
+      return ok(globalSettings)
+    }
+
+    // Final fallback: hard-coded defaults
     const defaults: CompressionSettings = {
       threshold: 0.95, // 95% of context window
       retentionTokens: 2000, // Default retention tokens
