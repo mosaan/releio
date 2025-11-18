@@ -163,8 +163,6 @@ const UserMessage: FC = () => {
         <MessagePrimitive.Content />
       </div>
 
-      <UserActionBar />
-
       <BranchPicker className="col-span-full col-start-1 row-start-3 -mr-1 justify-end" />
     </MessagePrimitive.Root>
   );
