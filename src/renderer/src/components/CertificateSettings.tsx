@@ -203,8 +203,19 @@ export function CertificateSettings({
       setCertificateCount(0)
       setCustomCertificates([])
     } else if (newMode === 'custom') {
-      // Load custom certificates
-      await loadSettings()
+      // Initialize with empty list or existing custom certificates
+      // Don't call loadSettings() as it would overwrite the mode with database value
+      const result = await window.backend.getCertificateSettings()
+      if (isOk(result) && result.value.mode === 'custom' && result.value.customCertificates) {
+        const certs = result.value.customCertificates as CustomCertificate[]
+        setCustomCertificates(certs)
+        setCertificateCount(certs.length)
+        await validateCertificatePaths()
+      } else {
+        // Start with empty certificate list
+        setCustomCertificates([])
+        setCertificateCount(0)
+      }
     }
   }
 
