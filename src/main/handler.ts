@@ -1,4 +1,4 @@
-import { shell } from 'electron'
+import { shell, dialog, BrowserWindow } from 'electron'
 import type { Result, UpdateCheckResult } from '@common/types'
 import { ok, error } from '@common/result'
 import type { Updater } from './updater'
@@ -55,6 +55,39 @@ export class Handler {
     try {
       this._updater.quitAndInstall()
       return ok(undefined)
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error'
+      return error(errorMessage)
+    }
+  }
+
+  async selectCertificateFile(): Promise<Result<string | null, string>> {
+    try {
+      const focusedWindow = BrowserWindow.getFocusedWindow()
+
+      const result = focusedWindow
+        ? await dialog.showOpenDialog(focusedWindow, {
+            title: 'Select Certificate File',
+            filters: [
+              { name: 'Certificate Files', extensions: ['crt', 'pem', 'cer', 'der'] },
+              { name: 'All Files', extensions: ['*'] }
+            ],
+            properties: ['openFile']
+          })
+        : await dialog.showOpenDialog({
+            title: 'Select Certificate File',
+            filters: [
+              { name: 'Certificate Files', extensions: ['crt', 'pem', 'cer', 'der'] },
+              { name: 'All Files', extensions: ['*'] }
+            ],
+            properties: ['openFile']
+          })
+
+      if (result.canceled || result.filePaths.length === 0) {
+        return ok(null)
+      }
+
+      return ok(result.filePaths[0])
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error'
       return error(errorMessage)

@@ -343,6 +343,9 @@ export interface RendererBackendAPI {
   getCertificateSettings: () => Promise<Result<CertificateSettings>>
   setCertificateSettings: (settings: CertificateSettings) => Promise<Result<void>>
   getSystemCertificateSettings: () => Promise<Result<CertificateSettings>>
+  addCustomCertificate: (certPath: string, displayName?: string) => Promise<Result<CustomCertificate>>
+  removeCustomCertificate: (certificateId: string) => Promise<Result<void>>
+  validateCustomCertificates: () => Promise<Result<Array<{ id: string; path: string; valid: boolean; error?: string }>>>
   // Connection tests
   testProxyConnection: (settings: ProxySettings) => Promise<Result<ConnectionTestResult>>
   testCertificateConnection: (settings: CertificateSettings) => Promise<Result<ConnectionTestResult>>
@@ -397,6 +400,7 @@ export interface RendererBackendAPI {
 export interface RendererMainAPI {
   ping: () => Promise<Result<string>>
   openFolder: (folderPath: string) => Promise<Result<void>>
+  selectCertificateFile: () => Promise<Result<string | null, string>>
   // Update operations
   checkForUpdates: () => Promise<Result<UpdateCheckResult, string>>
   downloadUpdate: () => Promise<Result<void, string>>
@@ -471,9 +475,20 @@ export interface ProxySettings {
 
 export type CertificateMode = 'system' | 'custom' | 'none'
 
+export interface CustomCertificate {
+  id: string
+  path: string // Absolute path to certificate file
+  displayName?: string // User-defined display name
+  issuer?: string // Certificate issuer (extracted from certificate)
+  validUntil?: string // Certificate expiration date (extracted from certificate)
+  addedAt: string // ISO 8601 timestamp when certificate was added
+}
+
 export interface CertificateSettings {
   mode: CertificateMode
-  customCertificates?: string[]
+  // For 'system' mode: string[] (PEM content from certificate store)
+  // For 'custom' mode: CustomCertificate[] (file paths with metadata)
+  customCertificates?: string[] | CustomCertificate[]
   rejectUnauthorized?: boolean
 }
 

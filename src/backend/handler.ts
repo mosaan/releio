@@ -13,6 +13,7 @@ import type {
   MCPPrompt,
   ProxySettings,
   CertificateSettings,
+  CustomCertificate,
   ConnectionTestResult,
   MCPServerWithStatus,
   StreamAIOptions,
@@ -35,7 +36,7 @@ import { streamText, abortStream, listAvailableModel, testConnection } from './a
 import { FACTORY } from './ai/factory'
 import { mcpManager } from './mcp'
 import { getProxySettings as loadProxySettings, setProxySettings as saveProxySettings, getSystemProxySettings as loadSystemProxySettings } from './settings/proxy'
-import { getCertificateSettings as loadCertificateSettings, setCertificateSettings as saveCertificateSettings, getSystemCertificateSettings as loadSystemCertificateSettings } from './settings/certificate'
+import { getCertificateSettings as loadCertificateSettings, setCertificateSettings as saveCertificateSettings, getSystemCertificateSettings as loadSystemCertificateSettings, addCustomCertificate, removeCustomCertificate, validateCustomCertificates } from './settings/certificate'
 import { testProxyConnection as runProxyTest, testCertificateConnection as runCertificateTest, testCombinedConnection as runCombinedTest } from './settings/connectionTest'
 import {
   getAISettingsV2 as loadAISettingsV2,
@@ -279,6 +280,21 @@ export class Handler {
   async getSystemCertificateSettings(): Promise<Result<CertificateSettings>> {
     const settings = await loadSystemCertificateSettings()
     return ok(settings)
+  }
+
+  async addCustomCertificate(certPath: string, displayName?: string): Promise<Result<CustomCertificate>> {
+    const certificate = await addCustomCertificate(certPath, displayName)
+    return ok(certificate)
+  }
+
+  async removeCustomCertificate(certificateId: string): Promise<Result<void>> {
+    await removeCustomCertificate(certificateId)
+    return ok(undefined)
+  }
+
+  async validateCustomCertificates(): Promise<Result<Array<{ id: string; path: string; valid: boolean; error?: string }>>> {
+    const results = await validateCustomCertificates()
+    return ok(results)
   }
 
   // Connection test handlers

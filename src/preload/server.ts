@@ -10,6 +10,7 @@ export class Server {
   public readonly mainAPI: RendererMainAPI = {
     ping: (...args) => ipcRenderer.invoke('ping', ...args),
     openFolder: (...args) => ipcRenderer.invoke('openFolder', ...args),
+    selectCertificateFile: (...args) => ipcRenderer.invoke('selectCertificateFile', ...args),
     checkForUpdates: (...args) => ipcRenderer.invoke('checkForUpdates', ...args),
     downloadUpdate: (...args) => ipcRenderer.invoke('downloadUpdate', ...args),
     quitAndInstall: (...args) => ipcRenderer.invoke('quitAndInstall', ...args)
@@ -57,6 +58,9 @@ export class Server {
     getCertificateSettings: (...args) => this._invoke('getCertificateSettings', ...args),
     setCertificateSettings: (...args) => this._invoke('setCertificateSettings', ...args),
     getSystemCertificateSettings: (...args) => this._invoke('getSystemCertificateSettings', ...args),
+    addCustomCertificate: (...args) => this._invoke('addCustomCertificate', ...args),
+    removeCustomCertificate: (...args) => this._invoke('removeCustomCertificate', ...args),
+    validateCustomCertificates: (...args) => this._invoke('validateCustomCertificates', ...args),
     // Connection tests
     testProxyConnection: (...args) => this._invoke('testProxyConnection', ...args),
     testCertificateConnection: (...args) => this._invoke('testCertificateConnection', ...args),

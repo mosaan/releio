@@ -15,8 +15,18 @@ import {
   CardHeader,
   CardTitle
 } from '@renderer/components/ui/card'
-import { CheckCircle, Loader2, RefreshCw, FileText, Save } from 'lucide-react'
-import type { CertificateSettings, CertificateMode } from '@common/types'
+import {
+  CheckCircle,
+  Loader2,
+  RefreshCw,
+  FileText,
+  Save,
+  Plus,
+  Trash2,
+  AlertCircle,
+  CheckCircle2
+} from 'lucide-react'
+import type { CertificateSettings, CertificateMode, CustomCertificate } from '@common/types'
 import { isOk } from '@common/result'
 import { logger } from '@renderer/lib/logger'
 
@@ -29,9 +39,14 @@ export function CertificateSettings({
 }: CertificateSettingsProps): React.JSX.Element {
   const [mode, setMode] = useState<CertificateMode>('system')
   const [certificateCount, setCertificateCount] = useState(0)
+  const [customCertificates, setCustomCertificates] = useState<CustomCertificate[]>([])
+  const [certificateValidation, setCertificateValidation] = useState<
+    Record<string, { valid: boolean; error?: string }>
+  >({})
   const [rejectUnauthorized, setRejectUnauthorized] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [isLoadingSystem, setIsLoadingSystem] = useState(false)
+  const [isAddingCertificate, setIsAddingCertificate] = useState(false)
   const [saveSuccess, setSaveSuccess] = useState(false)
 
   const loadSettings = useCallback(async (): Promise<void> => {
@@ -41,7 +56,19 @@ export function CertificateSettings({
       if (isOk(result)) {
         const settings = result.value
         setMode(settings.mode)
-        setCertificateCount(settings.customCertificates?.length || 0)
+
+        if (settings.mode === 'custom' && settings.customCertificates) {
+          const certs = settings.customCertificates as CustomCertificate[]
+          setCustomCertificates(certs)
+          setCertificateCount(certs.length)
+
+          // Validate certificate paths
+          await validateCertificatePaths()
+        } else {
+          setCertificateCount(settings.customCertificates?.length || 0)
+          setCustomCertificates([])
+        }
+
         setRejectUnauthorized(settings.rejectUnauthorized !== false)
       } else {
         logger.error('Failed to get certificate settings:', result.error)
@@ -102,12 +129,82 @@ export function CertificateSettings({
     }
   }
 
+  const validateCertificatePaths = async (): Promise<void> => {
+    try {
+      const result = await window.backend.validateCustomCertificates()
+      if (isOk(result)) {
+        const validation: Record<string, { valid: boolean; error?: string }> = {}
+        for (const item of result.value) {
+          validation[item.id] = { valid: item.valid, error: item.error }
+        }
+        setCertificateValidation(validation)
+      }
+    } catch (error) {
+      logger.error('Failed to validate certificate paths:', error)
+    }
+  }
+
+  const handleAddCertificate = async (): Promise<void> => {
+    setIsAddingCertificate(true)
+    try {
+      // Open file dialog
+      const result = await window.main.selectCertificateFile()
+      if (!isOk(result)) {
+        logger.error('Failed to open file dialog:', result.error)
+        return
+      }
+
+      const filePath = result.value
+      if (!filePath) {
+        // User cancelled
+        return
+      }
+
+      // Add certificate via backend
+      const addResult = await window.backend.addCustomCertificate(filePath)
+      if (isOk(addResult)) {
+        logger.info('Certificate added successfully')
+        // Reload settings to get updated list
+        await loadSettings()
+      } else {
+        logger.error('Failed to add certificate:', addResult.error)
+        alert(`Failed to add certificate: ${addResult.error}`)
+      }
+    } catch (error) {
+      logger.error('Failed to add certificate:', error)
+      alert(`Failed to add certificate: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    } finally {
+      setIsAddingCertificate(false)
+    }
+  }
+
+  const handleRemoveCertificate = async (certificateId: string): Promise<void> => {
+    try {
+      const result = await window.backend.removeCustomCertificate(certificateId)
+      if (isOk(result)) {
+        logger.info('Certificate removed successfully')
+        // Reload settings to get updated list
+        await loadSettings()
+      } else {
+        logger.error('Failed to remove certificate:', result.error)
+        alert(`Failed to remove certificate: ${result.error}`)
+      }
+    } catch (error) {
+      logger.error('Failed to remove certificate:', error)
+      alert(`Failed to remove certificate: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+  }
+
   const handleModeChange = async (newMode: CertificateMode): Promise<void> => {
     setMode(newMode)
     if (newMode === 'system') {
       await loadSystemSettings()
     } else if (newMode === 'none') {
       setCertificateCount(0)
+      setCustomCertificates([])
+    } else if (newMode === 'custom') {
+      // Load custom certificates
+      await loadSettings()
     }
   }
 
@@ -142,9 +239,90 @@ export function CertificateSettings({
             </p>
           )}
           {mode === 'custom' && (
-            <p className="text-sm text-gray-600">
-              Custom certificates feature coming soon
-            </p>
+            <div className="space-y-3 mt-3">
+              {customCertificates.length > 0 ? (
+                <div className="space-y-2">
+                  {customCertificates.map((cert) => {
+                    const validation = certificateValidation[cert.id]
+                    const isValid = validation?.valid !== false
+
+                    return (
+                      <div
+                        key={cert.id}
+                        className="p-3 bg-gray-50 rounded-md border border-gray-200 space-y-2"
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-center gap-2 flex-1 min-w-0">
+                            {isValid ? (
+                              <CheckCircle2 className="h-4 w-4 text-green-600 flex-shrink-0" />
+                            ) : (
+                              <AlertCircle className="h-4 w-4 text-red-600 flex-shrink-0" />
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-gray-900 truncate">
+                                {cert.displayName || 'Certificate'}
+                              </p>
+                              <p className="text-xs text-gray-600 truncate" title={cert.path}>
+                                {cert.path}
+                              </p>
+                            </div>
+                          </div>
+                          <Button
+                            onClick={() => handleRemoveCertificate(cert.id)}
+                            variant="ghost"
+                            size="sm"
+                            className="flex-shrink-0 h-8 w-8 p-0"
+                          >
+                            <Trash2 className="h-4 w-4 text-gray-500" />
+                          </Button>
+                        </div>
+                        {!isValid && validation?.error && (
+                          <p className="text-xs text-red-600 flex items-center gap-1">
+                            <AlertCircle className="h-3 w-3" />
+                            {validation.error}
+                          </p>
+                        )}
+                        {cert.issuer && (
+                          <p className="text-xs text-gray-600">
+                            <span className="font-medium">Issuer:</span> {cert.issuer}
+                          </p>
+                        )}
+                        {cert.validUntil && (
+                          <p className="text-xs text-gray-600">
+                            <span className="font-medium">Valid until:</span>{' '}
+                            {new Date(cert.validUntil).toLocaleDateString()}
+                          </p>
+                        )}
+                        <p className="text-xs text-gray-500">
+                          Added: {new Date(cert.addedAt).toLocaleDateString()}
+                        </p>
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-600">No custom certificates added yet</p>
+              )}
+              <Button
+                onClick={handleAddCertificate}
+                disabled={isAddingCertificate}
+                variant="outline"
+                size="sm"
+                className="w-full"
+              >
+                {isAddingCertificate ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Adding...
+                  </>
+                ) : (
+                  <>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add Certificate File
+                  </>
+                )}
+              </Button>
+            </div>
           )}
         </div>
 
