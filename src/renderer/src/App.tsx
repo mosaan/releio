@@ -4,11 +4,12 @@ import { Button } from '@renderer/components/ui/button'
 import { Settings } from '@renderer/components/Settings'
 import { ChatPageWithSessions } from '@renderer/components/ChatPageWithSessions'
 import { UpdateNotification } from '@renderer/components/UpdateNotification'
+import { MastraMvpChat } from '@renderer/components/MastraMvpChat'
 import { logger } from '@renderer/lib/logger'
 import { isOk } from '@common/result'
 
 function App() {
-  const [currentPage, setCurrentPage] = useState<'home' | 'settings' | 'chat'>('home')
+  const [currentPage, setCurrentPage] = useState<'home' | 'settings' | 'chat' | 'mastra'>('home')
   const [backendConnected, setBackendConnected] = useState(false)
   const [isCheckingSettings, setIsCheckingSettings] = useState(true)
   const [connectionError, setConnectionError] = useState<string | null>(null)
@@ -84,6 +85,10 @@ function App() {
     setCurrentPage('chat')
   }
 
+  const handleMastraClick = (): void => {
+    setCurrentPage('mastra')
+  }
+
   const handleRetryConnection = (): void => {
     setConnectionError(null)
     setIsCheckingSettings(true)
@@ -149,6 +154,10 @@ function App() {
     return <ChatPageWithSessions onSettings={handleSettingsClick} />
   }
 
+  if (currentPage === 'mastra') {
+    return <MastraMvpChat onBack={() => setCurrentPage('home')} onOpenSettings={handleSettingsClick} />
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 dark:from-gray-900 dark:via-gray-800 dark:to-blue-900 relative overflow-hidden">
       {/* Animated background particles */}
@@ -208,6 +217,14 @@ function App() {
               >
                 <SettingsIcon className="h-4 w-4" />
                 Settings
+              </Button>
+              <Button
+                variant="outline"
+                onClick={handleMastraClick}
+                className="flex items-center gap-2 backdrop-blur-sm bg-white/50 hover:bg-white/80 border-2 border-indigo-200 hover:border-indigo-400 transition-all duration-300"
+              >
+                <MessageCircle className="h-4 w-4" />
+                Mastra MVP
               </Button>
             </div>
           </div>
