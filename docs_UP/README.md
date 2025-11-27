@@ -29,6 +29,7 @@ docs_UP/
 ├── 設計_配置モデル.md                  # ノード・プロセス配置と外部依存の関係（方向づけ版）
 ├── 設計_アーキテクチャ決定ログ.md      # 設計観点の意思決定ログ
 ├── 設計_ユースケース設計.md            # ユースケースの設計レベル責務とインターフェイス
+├── 要求_インタフェースプロトタイプ.md     # UIプロトタイプ骨子（チャット/設定/圧縮/エラーUX）
 └── テスト_テスト戦略.md                # 現行テスト資産と改善計画の整理（方向づけ版）
 ```
 
@@ -486,8 +487,8 @@ Main/Backend/Rendererの配置と外部依存（AI Provider/MCP Server/Update Se
 本プロジェクトには、統一プロセス導入前に作成された多数の設計文書があります：
 - [docs/MCP_INTEGRATION_DESIGN.md](../MCP_INTEGRATION_DESIGN.md)
 - [docs/PROXY_AND_CERTIFICATE_DESIGN.md](../PROXY_AND_CERTIFICATE_DESIGN.md)
-- [docs/CHAT_SESSION_PERSISTENCE.md](../CHAT_SESSION_PERSISTENCE.md)
 - [docs/AUTO_UPDATE.md](../AUTO_UPDATE.md)
+- チャット永続化・エラー設計の内容は、本ディレクトリ内の要求/設計成果物（`要求_補足要求の仕様書.md`、`設計_設計モデル.md`、`設計_ユースケース設計.md`）へ統合済み。
 - その他多数（[docs/](../) ディレクトリを参照）
 
 これらの既存文書と本ディレクトリの成果物を照らし合わせながら、統一プロセスに基づいた整理を進めていきます。
