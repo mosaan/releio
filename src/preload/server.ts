@@ -87,8 +87,8 @@ export class Server {
     getCompressionPreview: (...args) => this._invoke('getCompressionPreview', ...args),
     compressConversation: (...args) => this._invoke('compressConversation', ...args),
     getCompressionSummaries: (...args) => this._invoke('getCompressionSummaries', ...args),
-    onEvent: (channel: string, callback: (appEvent: AppEvent) => void) => {
-      this._backendConnection!.onEvent(channel, callback)
+    onEvent: (channel: string, callback: (appEvent: AppEvent) => void, options?: { replayLast?: boolean }) => {
+      this._backendConnection!.onEvent(channel, callback, options)
     },
     offEvent: (channel: string) => {
       this._backendConnection!.offEvent(channel)

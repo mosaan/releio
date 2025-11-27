@@ -129,7 +129,7 @@ export class Connection {
    * When a listener is added, it will be immediately invoked with the most recent event from that
    * channel if any, even if that event has already been handled by other listeners.
    */
-  onEvent(channel: string, callback: (arg) => void): void {
+  onEvent(channel: string, callback: (arg) => void, options?: { replayLast?: boolean }): void {
     const listener = (event: MessageEvent): void => {
       const data = event.data
       if (data.type !== 'event') return
@@ -139,9 +139,12 @@ export class Connection {
       callback(eventMessage.payload)
     }
 
-    const lastEvent = this._channelLastReceivedEvent[channel]
-    if (lastEvent) {
-      callback(lastEvent.payload)
+    const replayLast = options?.replayLast ?? true
+    if (replayLast) {
+      const lastEvent = this._channelLastReceivedEvent[channel]
+      if (lastEvent) {
+        callback(lastEvent.payload)
+      }
     }
 
     this._addListener(listener)

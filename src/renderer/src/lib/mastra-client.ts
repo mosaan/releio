@@ -139,12 +139,13 @@ async function* receiveStream(
   }
 
   try {
-    window.backend.onEvent('mastraChatChunk', handleChunk)
-    window.backend.onEvent('mastraToolCall', handleToolCall)
-    window.backend.onEvent('mastraToolResult', handleToolResult)
-    window.backend.onEvent('mastraChatEnd', handleEnd)
-    window.backend.onEvent('mastraChatError', handleError)
-    window.backend.onEvent('mastraChatAborted', handleAborted)
+    const noReplay = { replayLast: false }
+    window.backend.onEvent('mastraChatChunk', handleChunk, noReplay)
+    window.backend.onEvent('mastraToolCall', handleToolCall, noReplay)
+    window.backend.onEvent('mastraToolResult', handleToolResult, noReplay)
+    window.backend.onEvent('mastraChatEnd', handleEnd, noReplay)
+    window.backend.onEvent('mastraChatError', handleError, noReplay)
+    window.backend.onEvent('mastraChatAborted', handleAborted, noReplay)
     abortSignal.addEventListener('abort', handleAbortSignal)
 
     while (!completed && !error && !abortSignal.aborted) {

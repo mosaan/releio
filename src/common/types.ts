@@ -193,7 +193,7 @@ export interface BackendMainAPI {
 }
 
 export interface BackendListenerAPI {
-  onEvent: (channel: string, callback: (appEvent: AppEvent) => void) => void
+  onEvent: (channel: string, callback: (appEvent: AppEvent) => void, options?: { replayLast?: boolean }) => void
   offEvent: (channel: string) => void
 }
 
