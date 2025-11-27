@@ -139,13 +139,13 @@ async function* receiveStream(
   }
 
   try {
-    const noReplay = { replayLast: false }
-    window.backend.onEvent('mastraChatChunk', handleChunk, noReplay)
-    window.backend.onEvent('mastraToolCall', handleToolCall, noReplay)
-    window.backend.onEvent('mastraToolResult', handleToolResult, noReplay)
-    window.backend.onEvent('mastraChatEnd', handleEnd, noReplay)
-    window.backend.onEvent('mastraChatError', handleError, noReplay)
-    window.backend.onEvent('mastraChatAborted', handleAborted, noReplay)
+    // Keep replay enabled so we don't miss early chunks before listeners attach; streamIdでフィルタする
+    window.backend.onEvent('mastraChatChunk', handleChunk)
+    window.backend.onEvent('mastraToolCall', handleToolCall)
+    window.backend.onEvent('mastraToolResult', handleToolResult)
+    window.backend.onEvent('mastraChatEnd', handleEnd)
+    window.backend.onEvent('mastraChatError', handleError)
+    window.backend.onEvent('mastraChatAborted', handleAborted)
     abortSignal.addEventListener('abort', handleAbortSignal)
 
     while (!completed && !error && !abortSignal.aborted) {
