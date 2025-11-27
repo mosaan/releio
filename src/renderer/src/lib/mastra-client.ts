@@ -101,8 +101,11 @@ async function* receiveStream(
   }
 
   const handleEnd = (appEvent: AppEvent): void => {
-    const payload = appEvent.payload as { sessionId: string; streamId: string }
+    const payload = appEvent.payload as { sessionId: string; streamId: string; text?: string }
     if (payload.sessionId !== sessionId || payload.streamId !== streamId) return
+    if (payload.text) {
+      pendingChunks.push({ type: 'text', text: payload.text })
+    }
     completed = true
     unblockYieldLoop()
   }

@@ -160,7 +160,7 @@ export class MastraChatService {
           case 'finish':
             publishEvent('mastraChatEnd', {
               type: EventType.Message,
-              payload: { sessionId: session.sessionId, streamId }
+              payload: { sessionId: session.sessionId, streamId, text: assistantText }
             })
             break
           case 'error':
