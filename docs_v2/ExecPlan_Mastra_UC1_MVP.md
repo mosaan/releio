@@ -9,18 +9,19 @@ Mastraを用いた最小限の会話MVPを3プロセス構成上で動かし、v
 ## Progress
 
 - [x] (2025-11-27 23:05+09:00) リポジトリ構成と企画書（docs_v2/開発企画書.md）を確認し、UC1が最優先であることを把握。
-- [ ] 要求・分析・設計ドキュメントの初版をdocs_v2に作成。
-- [ ] Mastra技術調査（パッケージAPIの確認・必要依存の特定）。
-- [ ] MastraベースのBackendチャネル新設とRenderer連携の実装。
-- [ ] 動作確認（手動チャット送受信・typecheck）と計画の更新。
+- [x] (2025-11-27 23:15+09:00) 要求・分析・設計ドキュメントの初版をdocs_v2に作成しコミット。
+- [x] (2025-11-27 23:23+09:00) Mastra依存追加、Backend/RendererのMVP実装を完了し、typecheck（node/web）を通過。
+- [ ] 動作確認（手動チャット送受信）と最終整備。
 
 ## Surprises & Discoveries
 
-- 未記載。
+- MastraのAI SDK v5互換ストリームはUIMessageの`id/parts`が必要で、単純なrole/contentだけでは型エラーとなるためIDを付与して送信する必要があった。
 
 ## Decision Log
 
-- 未記載。
+- Decision: MVPではAzureプロバイダーをMastra経路から除外し、サポート外として明示する。  
+  Rationale: MastraのOpenAI互換設定ではAzure特有のURL/認証形態対応が未確認で、初期MVPの安定性を優先するため。  
+  Date/Author: 2025-11-27 / Codex
 
 ## Outcomes & Retrospective
 
