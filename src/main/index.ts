@@ -5,6 +5,12 @@ import { Server } from './server'
 function main() {
   let server: Server
 
+  // 開発環境でリモートデバッグを有効化（electron-mcp-server用）
+  if (process.env.NODE_ENV === 'development') {
+    app.commandLine.appendSwitch('remote-debugging-port', '9222')
+    logger.info('Remote debugging enabled on port 9222 for MCP server')
+  }
+
   // This method will be called when Electron has finished
   // initialization and is ready to create browser windows.
   // Some APIs can only be used after this event occurs.
