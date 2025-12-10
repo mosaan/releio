@@ -16,3 +16,9 @@ tmp
 .claude/settings.local.json
 
 .serena
+
+# MCP server configuration (local settings)
+.mcp.json
+
+# Log files
+logs/
