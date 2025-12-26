@@ -1,4 +1,12 @@
-import type { AIMessage, MastraSessionInfo, MastraStatus, AppEvent, ToolCallPayload, ToolResultPayload } from '@common/types'
+import type {
+  AIMessage,
+  MastraSessionInfo,
+  MastraStatus,
+  AppEvent,
+  ToolCallPayload,
+  ToolResultPayload,
+  ToolApprovalRequestPayload
+} from '@common/types'
 import { isError, isOk } from '@common/result'
 import { logger } from '@renderer/lib/logger'
 
@@ -6,6 +14,7 @@ export type MastraStreamChunk =
   | { type: 'text'; text: string }
   | { type: 'tool-call'; toolCallId: string; toolName: string; input: unknown }
   | { type: 'tool-result'; toolCallId: string; toolName: string; output: unknown }
+  | { type: 'tool-approval-required'; request: ToolApprovalRequestPayload }
 
 export async function getMastraStatus(): Promise<MastraStatus> {
   const result = await window.backend.getMastraStatus()
@@ -101,11 +110,29 @@ async function* receiveStream(
     unblockYieldLoop()
   }
 
+  const handleToolApprovalRequired = (appEvent: AppEvent): void => {
+    const payload = appEvent.payload as ToolApprovalRequestPayload
+    if (payload.sessionId !== sessionId || payload.streamId !== streamId) return
+    logger.info('[Mastra][Renderer] tool approval required', {
+      streamId,
+      toolName: payload.toolName,
+      toolCallId: payload.toolCallId
+    })
+    pendingChunks.push({
+      type: 'tool-approval-required',
+      request: payload
+    })
+    unblockYieldLoop()
+  }
+
   const handleEnd = (appEvent: AppEvent): void => {
     const payload = appEvent.payload as { sessionId: string; streamId: string; text?: string }
     if (payload.sessionId !== sessionId || payload.streamId !== streamId) return
     if (payload.text) {
-      logger.info('[Mastra][Renderer] end received with text', { streamId, len: payload.text.length })
+      logger.info('[Mastra][Renderer] end received with text', {
+        streamId,
+        len: payload.text.length
+      })
       pendingChunks.push({ type: 'text', text: payload.text })
     } else {
       logger.info('[Mastra][Renderer] end received without text', { streamId })
@@ -143,6 +170,7 @@ async function* receiveStream(
     window.backend.onEvent('mastraChatChunk', handleChunk)
     window.backend.onEvent('mastraToolCall', handleToolCall)
     window.backend.onEvent('mastraToolResult', handleToolResult)
+    window.backend.onEvent('mastraToolApprovalRequired', handleToolApprovalRequired)
     window.backend.onEvent('mastraChatEnd', handleEnd)
     window.backend.onEvent('mastraChatError', handleError)
     window.backend.onEvent('mastraChatAborted', handleAborted)
@@ -173,6 +201,7 @@ async function* receiveStream(
     window.backend.offEvent('mastraChatChunk')
     window.backend.offEvent('mastraToolCall')
     window.backend.offEvent('mastraToolResult')
+    window.backend.offEvent('mastraToolApprovalRequired')
     window.backend.offEvent('mastraChatEnd')
     window.backend.offEvent('mastraChatError')
     window.backend.offEvent('mastraChatAborted')

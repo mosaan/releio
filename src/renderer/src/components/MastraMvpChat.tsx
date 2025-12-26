@@ -1,12 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowLeft, Cpu, Loader2, Play, Square, Workflow } from 'lucide-react'
-import type { AIMessage, MastraSessionInfo, MastraStatus } from '@common/types'
+import type {
+  AIMessage,
+  MastraSessionInfo,
+  MastraStatus,
+  ToolApprovalRequestPayload
+} from '@common/types'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@renderer/components/ui/card'
 import { Badge } from '@renderer/components/ui/badge'
 import { getMastraStatus, startMastraSession, streamMastraText } from '@renderer/lib/mastra-client'
 import { logger } from '@renderer/lib/logger'
+import { ToolApprovalDialog } from '@renderer/components/ToolApprovalDialog'
 
 interface MastraMvpChatProps {
   onBack: () => void
@@ -23,6 +29,7 @@ export function MastraMvpChat({ onBack, onOpenSettings }: MastraMvpChatProps): R
   const [isStreaming, setIsStreaming] = useState(false)
   const [streamingText, setStreamingText] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [pendingApproval, setPendingApproval] = useState<ToolApprovalRequestPayload | null>(null)
   const abortRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
@@ -84,8 +91,18 @@ export function MastraMvpChat({ onBack, onOpenSettings }: MastraMvpChatProps): R
       for await (const chunk of stream) {
         if (chunk.type === 'text') {
           assistantText += chunk.text
-          logger.info('[Mastra][UI] rendering chunk', { len: chunk.text.length, total: assistantText.length })
+          logger.info('[Mastra][UI] rendering chunk', {
+            len: chunk.text.length,
+            total: assistantText.length
+          })
           setStreamingText(assistantText)
+        } else if (chunk.type === 'tool-approval-required') {
+          logger.info('[Mastra][UI] tool approval required', {
+            toolName: chunk.request.toolName,
+            toolCallId: chunk.request.toolCallId
+          })
+          setPendingApproval(chunk.request)
+          // Stream will continue after user approves/declines via backend events
         }
       }
 
@@ -115,6 +132,16 @@ export function MastraMvpChat({ onBack, onOpenSettings }: MastraMvpChatProps): R
     if (abortRef.current) {
       abortRef.current.abort()
     }
+  }
+
+  const handleToolApproval = (): void => {
+    logger.info('[Mastra][UI] tool approved by user')
+    setPendingApproval(null)
+  }
+
+  const handleToolDecline = (reason?: string): void => {
+    logger.info('[Mastra][UI] tool declined by user', { reason })
+    setPendingApproval(null)
   }
 
   const streamingMessage = useMemo<ConversationMessage | null>(() => {
@@ -163,7 +190,12 @@ export function MastraMvpChat({ onBack, onOpenSettings }: MastraMvpChatProps): R
             {renderStatusBadge()}
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={onOpenSettings} className="border-slate-600">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onOpenSettings}
+              className="border-slate-600"
+            >
               設定を開く
             </Button>
           </div>
@@ -180,7 +212,11 @@ export function MastraMvpChat({ onBack, onOpenSettings }: MastraMvpChatProps): R
             <CardContent className="space-y-3">
               <p>{status?.reason || '有効なAI設定を確認してください。'}</p>
               <div className="flex gap-2">
-                <Button variant="outline" onClick={onOpenSettings} className="border-red-500/60 text-red-50">
+                <Button
+                  variant="outline"
+                  onClick={onOpenSettings}
+                  className="border-red-500/60 text-red-50"
+                >
                   設定を確認
                 </Button>
                 <Button
@@ -206,7 +242,8 @@ export function MastraMvpChat({ onBack, onOpenSettings }: MastraMvpChatProps): R
             <div>
               <CardTitle className="text-slate-50">会話</CardTitle>
               <p className="text-xs text-slate-400">
-                セッションID: {session?.sessionId || '未初期化'} / Thread: {session?.threadId || '-'}
+                セッションID: {session?.sessionId || '未初期化'} / Thread:{' '}
+                {session?.threadId || '-'}
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -234,13 +271,18 @@ export function MastraMvpChat({ onBack, onOpenSettings }: MastraMvpChatProps): R
           <CardContent className="space-y-4">
             <div className="h-80 overflow-y-auto rounded-lg border border-slate-800 bg-slate-950/40 p-4 space-y-3">
               {renderedMessages.length === 0 && (
-                <div className="text-sm text-slate-400 text-center py-8">まだメッセージはありません</div>
+                <div className="text-sm text-slate-400 text-center py-8">
+                  まだメッセージはありません
+                </div>
               )}
               {renderedMessages.map((msg) => (
                 <div
                   key={msg.id}
-                  className={`p-3 rounded-lg ${msg.role === 'user' ? 'bg-indigo-900/60 border border-indigo-700/60' : 'bg-slate-800/70 border border-slate-700/70'
-                    }`}
+                  className={`p-3 rounded-lg ${
+                    msg.role === 'user'
+                      ? 'bg-indigo-900/60 border border-indigo-700/60'
+                      : 'bg-slate-800/70 border border-slate-700/70'
+                  }`}
                 >
                   <div className="text-xs uppercase tracking-wide text-slate-400 mb-1">
                     {msg.role === 'user' ? 'You' : 'Assistant'}
@@ -288,6 +330,14 @@ export function MastraMvpChat({ onBack, onOpenSettings }: MastraMvpChatProps): R
           </CardContent>
         </Card>
       </div>
+
+      {/* Tool Approval Dialog for HITL */}
+      <ToolApprovalDialog
+        open={pendingApproval !== null}
+        request={pendingApproval}
+        onApprove={handleToolApproval}
+        onDecline={handleToolDecline}
+      />
     </div>
   )
 }
