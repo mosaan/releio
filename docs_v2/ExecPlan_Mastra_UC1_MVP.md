@@ -1,5 +1,7 @@
 # MastraベースUC1 MVP ExecPlan
 
+> **注意**: 本ドキュメントはUC1 MVPの初期実装に関する計画です。UC2（MCPツール実行）およびツール実行許可システムを含む完全移行計画は `docs_v2/ExecPlan_Mastra_FullMigration.md` を参照してください。
+
 本ドキュメントは .agent/PLANS.md に従い、Releio v2方向づけフェーズの「UC1: 基本的なAI会話」をMastraベースで成立させるための実行計画を示す。進捗に応じて常に更新し、単体で新人が追従できる完全自給の手順書として維持する。
 
 ## Purpose / Big Picture
