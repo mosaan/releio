@@ -5,6 +5,7 @@ import { randomUUID } from 'crypto'
 import type { AIMessage, AIProvider, AppEvent } from '@common/types'
 import { EventType } from '@common/types'
 import { getAISettingsV2 as loadAISettingsV2 } from '../settings/ai-settings'
+import { mastraToolService, type MastraToolRecord } from './MastraToolService'
 import logger from '../logger'
 
 type SessionRecord = {
@@ -257,6 +258,24 @@ export class MastraChatService {
     return true
   }
 
+  /**
+   * Invalidate the agent to force re-initialization with fresh tools
+   * Call this when MCP servers change or AI settings change
+   */
+  invalidateAgent(): void {
+    this.agent = null
+    this.selection = null
+    mastraToolService.invalidateCache()
+    logger.info('[Mastra] Agent invalidated - will reinitialize on next request')
+  }
+
+  /**
+   * Get the current tool count (for status display)
+   */
+  async getToolCount(): Promise<number> {
+    return mastraToolService.getToolCount()
+  }
+
   private async ensureAgent(): Promise<ProviderSelection> {
     if (this.agent && this.selection) {
       return this.selection
@@ -269,21 +288,55 @@ export class MastraChatService {
       ...(selection.baseURL ? { url: selection.baseURL } : {})
     }
 
+    // Get MCP tools converted to Mastra format
+    const tools = await this.loadTools()
+
     this.agent = new Agent({
       name: 'mastra-assistant',
       instructions:
-        'You are Releio assistant running on Mastra. Respond concisely and clearly for desktop users.',
-      model: modelConfig
+        'You are Releio assistant running on Mastra. Respond concisely and clearly for desktop users. You have access to tools from connected MCP servers.',
+      model: modelConfig,
+      tools
     })
     this.selection = selection
 
     logger.info('[Mastra] Agent initialized', {
       provider: selection.provider,
       model: selection.model,
-      baseURL: selection.baseURL ? 'custom' : 'default'
+      baseURL: selection.baseURL ? 'custom' : 'default',
+      toolCount: Object.keys(tools).length
     })
 
     return selection
+  }
+
+  /**
+   * Load tools from MastraToolService
+   * For Phase 2, all tools are auto-approved (no HITL)
+   * Phase 3 will add permission checking
+   */
+  private async loadTools(): Promise<MastraToolRecord> {
+    try {
+      const tools = await mastraToolService.getAllTools()
+      const toolNames = Object.keys(tools)
+
+      if (toolNames.length > 0) {
+        logger.info('[Mastra] Tools loaded', {
+          count: toolNames.length,
+          tools: toolNames
+        })
+      } else {
+        logger.info('[Mastra] No tools available (no MCP servers connected)')
+      }
+
+      return tools
+    } catch (err) {
+      logger.error('[Mastra] Failed to load tools', {
+        error: err instanceof Error ? err.message : err
+      })
+      // Return empty tools on error - agent can still function without tools
+      return {}
+    }
   }
 
   private async resolveProvider(): Promise<ProviderSelection> {
