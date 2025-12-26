@@ -6,6 +6,8 @@ import { Handler } from './handler'
 import logger from './logger'
 import { db, runMigrations, ensureConnection } from './db'
 import { mcpManager } from './mcp'
+import { backendRouter } from './trpc/router'
+import { createMessagePortHandler } from './trpc/handler'
 
 /**
  * This class encapsulate the main logic of the backend thread.
@@ -49,7 +51,11 @@ export class Server {
       return result
     })
 
-    logger.info('Renderer Connected')
+    // tRPCハンドラーを追加（MessagePort経由のtRPCリクエストを処理）
+    const trpcHandler = createMessagePortHandler({ router: backendRouter, port })
+    port.on('message', trpcHandler)
+
+    logger.info('Renderer Connected (with tRPC support)')
 
     // Send current MCP statuses so renderer has an immediate snapshot
     for (const status of mcpManager.getAllServerStatuses()) {

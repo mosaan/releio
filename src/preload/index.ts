@@ -35,6 +35,49 @@ function main(): void {
 
   expose('main', server.mainAPI)
   expose('backend', server.backendAPI)
+
+  // tRPC用にMessagePort APIをラップして公開
+  // contextBridge経由ではMessagePortオブジェクトを直接渡せないため、
+  // MessagePortの機能をラップした関数として公開する
+  expose('trpcMessagePort', {
+    postMessage: (data: unknown) => {
+      const port = server.getMessagePort()
+      if (!port) {
+        throw new Error('MessagePort not connected')
+      }
+      port.postMessage(data)
+    },
+    onMessage: (callback: (data: unknown) => void) => {
+      const port = server.getMessagePort()
+      if (!port) {
+        throw new Error('MessagePort not connected')
+      }
+
+      // MessagePortのAPIスタイルを判定してリスナーを追加
+      const handler = (event: MessageEvent | any) => {
+        // Web API MessageEventの場合は event.data、Node.js の場合は直接データ
+        const data = 'data' in event ? event.data : event
+        callback(data)
+      }
+
+      if ('addEventListener' in port) {
+        port.addEventListener('message', handler)
+      } else {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ;(port as any).on('message', handler)
+      }
+
+      // クリーンアップ用の関数を返す
+      return () => {
+        if ('removeEventListener' in port) {
+          port.removeEventListener('message', handler)
+        } else {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          ;(port as any).removeListener('message', handler)
+        }
+      }
+    }
+  })
 }
 
 main()
