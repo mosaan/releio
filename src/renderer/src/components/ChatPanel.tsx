@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { Settings, AlertCircle, Archive, MessageCircle } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
 import { Thread } from '@renderer/components/assistant-ui/thread'
@@ -6,9 +6,15 @@ import { AIRuntimeProvider } from '@renderer/components/AIRuntimeProvider'
 import { ModelSelector } from '@renderer/components/ModelSelector'
 import { TokenUsageIndicator } from '@renderer/components/TokenUsageIndicator'
 import { CompressionConfirmDialog } from '@renderer/components/CompressionConfirmDialog'
+import { ToolApprovalDialog } from '@renderer/components/ToolApprovalDialog'
 import { Alert, AlertDescription, AlertTitle } from '@renderer/components/ui/alert'
 import { useSessionManager } from '@renderer/contexts/SessionManager'
-import type { AISettingsV2, AIModelSelection, CompressionResult } from '@common/types'
+import type {
+  AISettingsV2,
+  AIModelSelection,
+  CompressionResult,
+  ToolApprovalRequestPayload
+} from '@common/types'
 import { isOk } from '@common/result'
 import { logger } from '@renderer/lib/logger'
 
@@ -18,12 +24,53 @@ interface ChatPanelProps {
 }
 
 export function ChatPanel({ onSettings, onMastra }: ChatPanelProps): React.JSX.Element {
-  const { currentSession, currentSessionId, modelSelection, setModelSelection, updateSession, refreshSessions, refreshCurrentSession } = useSessionManager()
+  const {
+    currentSession,
+    currentSessionId,
+    modelSelection,
+    setModelSelection,
+    updateSession,
+    refreshSessions,
+    refreshCurrentSession,
+    mastraSessionId,
+    mastraStatus,
+    initializeMastraSession
+  } = useSessionManager()
   const [hasProviderConfigs, setHasProviderConfigs] = useState<boolean>(true)
   const [hasAvailableModels, setHasAvailableModels] = useState<boolean>(true)
   const [compressionNeeded, setCompressionNeeded] = useState<boolean>(false)
   const [showCompressionDialog, setShowCompressionDialog] = useState<boolean>(false)
   const [apiKey, setApiKey] = useState<string>('')
+
+  // HITL Tool Approval state
+  const [pendingApproval, setPendingApproval] = useState<ToolApprovalRequestPayload | null>(null)
+
+  // Initialize Mastra session when the component mounts or when mastraStatus becomes ready
+  useEffect(() => {
+    const initMastra = async (): Promise<void> => {
+      if (!mastraSessionId && mastraStatus === null) {
+        logger.info('[ChatPanel] Initializing Mastra session...')
+        await initializeMastraSession()
+      }
+    }
+    initMastra()
+  }, [mastraSessionId, mastraStatus, initializeMastraSession])
+
+  // Handle tool approval callbacks
+  const handleToolApprovalRequired = useCallback((request: ToolApprovalRequestPayload) => {
+    logger.info('[ChatPanel] Tool approval required:', request.toolName)
+    setPendingApproval(request)
+  }, [])
+
+  const handleToolApprove = useCallback(() => {
+    logger.info('[ChatPanel] Tool approved')
+    setPendingApproval(null)
+  }, [])
+
+  const handleToolDecline = useCallback((reason?: string) => {
+    logger.info('[ChatPanel] Tool declined:', reason)
+    setPendingApproval(null)
+  }, [])
 
   // Handle model selection change and persist to database
   const handleModelChange = async (newSelection: AIModelSelection | null) => {
@@ -88,7 +135,9 @@ export function ChatPanel({ onSettings, onMastra }: ChatPanelProps): React.JSX.E
 
       try {
         // Get provider configuration to get provider type, model name, and API key
-        const configResult = await window.backend.getProviderConfiguration(modelSelection.providerConfigId)
+        const configResult = await window.backend.getProviderConfiguration(
+          modelSelection.providerConfigId
+        )
         if (!isOk(configResult) || !configResult.value) {
           return
         }
@@ -101,13 +150,20 @@ export function ChatPanel({ onSettings, onMastra }: ChatPanelProps): React.JSX.E
         setApiKey(providerConfig.config.apiKey || '')
 
         // Check if compression is needed
-        const result = await window.backend.checkCompressionNeeded(currentSessionId, provider, model)
+        const result = await window.backend.checkCompressionNeeded(
+          currentSessionId,
+          provider,
+          model
+        )
 
         if (isOk(result)) {
           setCompressionNeeded(result.value)
         }
       } catch (err) {
-        logger.error('Error checking compression needed', { sessionId: currentSessionId, error: err })
+        logger.error('Error checking compression needed', {
+          sessionId: currentSessionId,
+          error: err
+        })
       }
     }
 
@@ -159,7 +215,11 @@ export function ChatPanel({ onSettings, onMastra }: ChatPanelProps): React.JSX.E
                 </div>
               )}
             </div>
-            <TokenUsageIndicator sessionId={currentSessionId} modelSelection={modelSelection} currentSession={currentSession} />
+            <TokenUsageIndicator
+              sessionId={currentSessionId}
+              modelSelection={modelSelection}
+              currentSession={currentSession}
+            />
             {onMastra && (
               <Button variant="outline" size="sm" onClick={onMastra} className="gap-1">
                 <MessageCircle className="h-4 w-4" />
@@ -241,25 +301,37 @@ export function ChatPanel({ onSettings, onMastra }: ChatPanelProps): React.JSX.E
               </Alert>
             )}
             <div className="flex-1 overflow-hidden">
-              {modelSelection ? (
+              {modelSelection && mastraSessionId ? (
                 <AIRuntimeProvider
                   key={currentSession?.id} // Force remount when session changes
                   modelSelection={modelSelection}
                   chatSessionId={currentSession?.id}
+                  mastraSessionId={mastraSessionId}
                   initialMessages={currentSession?.messages}
                   currentSession={currentSession}
                   onMessageCompleted={async () => {
                     await refreshSessions()
                     await refreshCurrentSession()
                   }}
+                  onToolApprovalRequired={handleToolApprovalRequired}
                 >
                   <Thread />
                 </AIRuntimeProvider>
-              ) : (
+              ) : !modelSelection ? (
                 <div className="h-full flex items-center justify-center p-4 text-gray-400">
                   <div className="text-center space-y-2">
                     <AlertCircle className="h-12 w-12 mx-auto opacity-50" />
                     <p className="text-lg">Select a model to start chatting</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="h-full flex items-center justify-center p-4 text-gray-400">
+                  <div className="text-center space-y-2">
+                    <AlertCircle className="h-12 w-12 mx-auto opacity-50" />
+                    <p className="text-lg">Initializing AI backend...</p>
+                    <p className="text-sm">
+                      {mastraStatus && !mastraStatus.ready ? mastraStatus.reason : 'Please wait'}
+                    </p>
                   </div>
                 </div>
               )}
@@ -279,6 +351,14 @@ export function ChatPanel({ onSettings, onMastra }: ChatPanelProps): React.JSX.E
           onCancel={() => setShowCompressionDialog(false)}
         />
       )}
+
+      {/* Tool Approval Dialog for HITL */}
+      <ToolApprovalDialog
+        open={pendingApproval !== null}
+        request={pendingApproval}
+        onApprove={handleToolApprove}
+        onDecline={handleToolDecline}
+      />
     </div>
   )
 }

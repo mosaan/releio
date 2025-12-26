@@ -1,8 +1,13 @@
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react'
 import { logger } from '@renderer/lib/logger'
 import { isOk } from '@common/result'
-import type { ChatSessionRow, ChatSessionWithMessages, CreateSessionRequest, SessionUpdates } from '@common/chat-types'
-import type { AIModelSelection } from '@common/types'
+import type {
+  ChatSessionRow,
+  ChatSessionWithMessages,
+  CreateSessionRequest,
+  SessionUpdates
+} from '@common/chat-types'
+import type { AIModelSelection, MastraSessionInfo, MastraStatus } from '@common/types'
 
 interface SessionManagerContextValue {
   // Current session state
@@ -24,6 +29,11 @@ interface SessionManagerContextValue {
   // Model selection for current session
   modelSelection: AIModelSelection | null
   setModelSelection: (selection: AIModelSelection | null) => void
+
+  // Mastra session management
+  mastraSessionId: string | null
+  mastraStatus: MastraStatus | null
+  initializeMastraSession: () => Promise<MastraSessionInfo | null>
 }
 
 const SessionManagerContext = createContext<SessionManagerContextValue | undefined>(undefined)
@@ -32,12 +42,52 @@ interface SessionManagerProviderProps {
   children: ReactNode
 }
 
-export function SessionManagerProvider({ children }: SessionManagerProviderProps): React.JSX.Element {
+export function SessionManagerProvider({
+  children
+}: SessionManagerProviderProps): React.JSX.Element {
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
   const [currentSession, setCurrentSession] = useState<ChatSessionWithMessages | null>(null)
   const [sessions, setSessions] = useState<ChatSessionRow[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [modelSelection, setModelSelection] = useState<AIModelSelection | null>(null)
+
+  // Mastra session state
+  const [mastraSessionId, setMastraSessionId] = useState<string | null>(null)
+  const [mastraStatus, setMastraStatus] = useState<MastraStatus | null>(null)
+
+  // Initialize Mastra session
+  const initializeMastraSession = useCallback(async (): Promise<MastraSessionInfo | null> => {
+    try {
+      // First check Mastra status
+      const statusResult = await window.backend.getMastraStatus()
+      if (isOk(statusResult)) {
+        setMastraStatus(statusResult.value)
+
+        if (!statusResult.value.ready) {
+          logger.warn('[Mastra] Not ready:', statusResult.value.reason)
+          return null
+        }
+      } else {
+        logger.error('[Mastra] Failed to get status')
+        return null
+      }
+
+      // Start a new Mastra session
+      const sessionResult = await window.backend.startMastraSession()
+      if (isOk(sessionResult)) {
+        const session = sessionResult.value
+        setMastraSessionId(session.sessionId)
+        logger.info(`[Mastra] Session initialized: ${session.sessionId}`)
+        return session
+      } else {
+        logger.error('[Mastra] Failed to start session:', sessionResult.error)
+        return null
+      }
+    } catch (error) {
+      logger.error('[Mastra] Error initializing session:', error)
+      return null
+    }
+  }, [])
 
   // Load sessions from backend (pure function - no currentSessionId dependency)
   const refreshSessions = useCallback(async () => {
@@ -118,13 +168,13 @@ export function SessionManagerProvider({ children }: SessionManagerProviderProps
       return
     }
 
-    const updatedSession = sessions.find(s => s.id === currentSessionId)
+    const updatedSession = sessions.find((s) => s.id === currentSessionId)
     if (!updatedSession) {
       return
     }
 
     // Update currentSession with latest metadata from sessions list
-    setCurrentSession(prevSession => {
+    setCurrentSession((prevSession) => {
       if (!prevSession) {
         return prevSession
       }
@@ -269,7 +319,11 @@ export function SessionManagerProvider({ children }: SessionManagerProviderProps
     refreshSessions,
     refreshCurrentSession,
     modelSelection,
-    setModelSelection
+    setModelSelection,
+    // Mastra session
+    mastraSessionId,
+    mastraStatus,
+    initializeMastraSession
   }
 
   return <SessionManagerContext.Provider value={value}>{children}</SessionManagerContext.Provider>
