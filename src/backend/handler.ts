@@ -1,9 +1,6 @@
 import { Connection } from '@common/connection'
 import type {
   Result,
-  AIProvider,
-  AIConfig,
-  AISettings,
   AISettingsV2,
   AIMessage,
   AppEvent,
@@ -15,9 +12,6 @@ import type {
   CertificateSettings,
   ConnectionTestResult,
   MCPServerWithStatus,
-  StreamAIOptions,
-  AIProviderConfig,
-  AzureProviderConfig,
   AIProviderConfiguration,
   AIModelDefinition,
   CompressionSettings,
@@ -32,8 +26,6 @@ import { dirname } from 'path'
 import { getSetting, setSetting, getAllSettings, clearSetting } from './settings'
 import { getDatabasePath, getLogPath } from './paths'
 import logger from './logger'
-import { streamText, abortStream, listAvailableModel, testConnection } from './ai'
-import { FACTORY } from './ai/factory'
 import { mcpManager } from './mcp'
 import {
   getProxySettings as loadProxySettings,
@@ -140,140 +132,6 @@ export class Handler {
   async getLogPath(): Promise<Result<string, string>> {
     const logPath = getLogPath()
     return ok(logPath)
-  }
-
-  // AI handlers (v1 - deprecated)
-  /**
-   * Stream AI text using v1 AI SDK integration.
-   * @deprecated Use streamMastraText instead. This v1 streaming method will be removed in a future version.
-   */
-  async streamAIText(messages: AIMessage[], options?: StreamAIOptions): Promise<Result<string>> {
-    let selectedProvider: AIProvider
-    let selectedModel: string
-    let apiKey: string
-    let providerConfig: AIProviderConfig | AzureProviderConfig | undefined
-
-    // Resolution logic: modelSelection → explicit provider/model → V1 fallback
-
-    if (options?.modelSelection) {
-      // Use model selection from V2 settings
-      const settings = await loadAISettingsV2()
-      const { providerConfigId, modelId } = options.modelSelection
-
-      // Find the provider configuration
-      const config = settings.providerConfigs.find((c) => c.id === providerConfigId)
-      if (!config) {
-        throw new Error(`Provider configuration not found: ${providerConfigId}`)
-      }
-      if (!config.enabled) {
-        throw new Error(`Provider configuration is disabled: ${config.name}`)
-      }
-
-      // Find the model
-      const model = config.models.find((m) => m.id === modelId)
-      if (!model) {
-        throw new Error(`Model not found in configuration: ${modelId}`)
-      }
-
-      // Validate API key
-      if (!config.config.apiKey) {
-        throw new Error(`API key not configured for: ${config.name}`)
-      }
-
-      selectedProvider = config.type as AIProvider
-      selectedModel = model.id
-      apiKey = config.config.apiKey
-      providerConfig = config.config
-
-      logger.info(
-        `Using model selection: ${config.name} (${providerConfigId}) - ${model.displayName || model.id}`
-      )
-    } else if (options?.provider) {
-      // Use explicit provider/model override
-      selectedProvider = options.provider
-      selectedModel = options.model || FACTORY[selectedProvider].default
-
-      logger.info(`Using explicit provider override: ${selectedProvider} - ${selectedModel}`)
-    } else {
-      // Fallback to v1 settings
-      logger.warn('No model selection provided, falling back to v1 settings')
-      const aiSettings = await getSetting<AISettings>('ai')
-      if (!aiSettings?.default_provider) {
-        throw new Error('No AI provider configured')
-      }
-
-      selectedProvider = aiSettings.default_provider
-      const apiKeyField = `${selectedProvider}_api_key` as keyof AISettings
-      apiKey = aiSettings[apiKeyField] as string
-
-      if (!apiKey) {
-        throw new Error(`API key not found for provider: ${selectedProvider}`)
-      }
-
-      const modelField = `${selectedProvider}_model` as keyof AISettings
-      selectedModel = (aiSettings[modelField] as string) || FACTORY[selectedProvider].default
-    }
-
-    // Create config object
-    const config: AIConfig = {
-      provider: selectedProvider!,
-      model: selectedModel!,
-      apiKey: apiKey!,
-      baseURL: providerConfig?.baseURL,
-      // Azure-specific fields
-      resourceName: (providerConfig as AzureProviderConfig)?.resourceName,
-      useDeploymentBasedUrls: (providerConfig as AzureProviderConfig)?.useDeploymentBasedUrls
-    }
-
-    logger.info(`Streaming with ${config.provider} - ${config.model}`)
-
-    // Get MCP tools from all active servers
-    const mcpTools = await mcpManager.getAllTools()
-    const toolCount = Object.keys(mcpTools).length
-    logger.info(`Streaming AI text with ${toolCount} MCP tool(s) available`)
-
-    const sessionId = await streamText(
-      config,
-      messages,
-      (channel: string, event: AppEvent) => {
-        this._rendererConnection.publishEvent(channel, event)
-      },
-      toolCount > 0 ? mcpTools : undefined,
-      options?.chatSessionId
-    )
-    return ok(sessionId)
-  }
-
-  /**
-   * Abort an AI text streaming session.
-   * @deprecated Use abortMastraStream instead. This v1 abort method will be removed in a future version.
-   */
-  async abortAIText(sessionId: string): Promise<Result<void>> {
-    const success = abortStream(sessionId)
-    if (success) {
-      logger.info(`AI chat session ${sessionId} successfully aborted`)
-    } else {
-      logger.warn(`L Attempted to abort non-existent session: ${sessionId}`)
-    }
-    return ok(undefined)
-  }
-
-  /**
-   * Get available AI models for a provider.
-   * @deprecated Use provider configuration models instead. This v1 method will be removed in a future version.
-   */
-  async getAIModels(provider: AIProvider): Promise<Result<string[]>> {
-    const models = await listAvailableModel(provider)
-    return ok(models)
-  }
-
-  /**
-   * Test AI provider connection.
-   * @deprecated Use Mastra agent status checks instead. This v1 method will be removed in a future version.
-   */
-  async testAIProviderConnection(config: AIConfig): Promise<Result<boolean>> {
-    const result = await testConnection(config)
-    return ok(result)
   }
 
   // Mastra handlers
