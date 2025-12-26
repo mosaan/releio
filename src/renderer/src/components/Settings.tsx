@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react'
-import { ArrowLeft, FolderOpen, Wifi, Loader2, CheckCircle, XCircle } from 'lucide-react'
+import { ArrowLeft, FolderOpen, Wifi, Loader2, CheckCircle, XCircle, Zap } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
 import { isOk } from '@common/result'
 import { logger } from '@renderer/lib/logger'
 import type { ConnectionTestResult } from '@common/types'
+import { trpc } from '@renderer/lib/trpc'
 import {
   Card,
   CardContent,
@@ -16,6 +17,7 @@ import { ProxySettings } from './ProxySettings'
 import { MCPSettings } from './MCPSettings'
 import { CertificateSettings } from './CertificateSettings'
 import { CompressionSettings } from './CompressionSettings'
+import { ToolPermissionSettings } from './ToolPermissionSettings'
 
 interface SettingsProps {
   onBack: () => void
@@ -30,6 +32,10 @@ export function Settings({ onBack }: SettingsProps): React.JSX.Element {
   const [testSuccess, setTestSuccess] = useState(false)
   const [testError, setTestError] = useState(false)
   const [testMessage, setTestMessage] = useState<string>('')
+
+  // tRPC test state
+  const [trpcTesting, setTrpcTesting] = useState(false)
+  const [trpcResult, setTrpcResult] = useState<string>('')
 
   useEffect(() => {
     const loadPaths = async (): Promise<void> => {
@@ -56,6 +62,24 @@ export function Settings({ onBack }: SettingsProps): React.JSX.Element {
 
   const handleOpenFolder = async (folderPath: string): Promise<void> => {
     await window.main.openFolder(folderPath)
+  }
+
+  const handleTrpcTest = async (): Promise<void> => {
+    setTrpcTesting(true)
+    setTrpcResult('')
+
+    try {
+      logger.info('Testing tRPC ping over MessagePort...')
+      const result = await trpc.ping.query()
+      setTrpcResult(`Success! Response: "${result}"`)
+      logger.info('tRPC ping successful:', result)
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      setTrpcResult(`Error: ${errorMessage}`)
+      logger.error('tRPC ping failed:', error)
+    } finally {
+      setTrpcTesting(false)
+    }
   }
 
   const PathDisplay = ({
@@ -166,6 +190,8 @@ export function Settings({ onBack }: SettingsProps): React.JSX.Element {
 
           <MCPSettings className="shadow-sm" />
 
+          <ToolPermissionSettings className="shadow-sm" />
+
           <CompressionSettings className="shadow-sm" />
 
           <ProxySettings className="shadow-sm" />
@@ -251,6 +277,56 @@ export function Settings({ onBack }: SettingsProps): React.JSX.Element {
                   description="Location where application log files are stored"
                   path={logPath}
                 />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-sm border-blue-200">
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <Zap className="h-5 w-5 text-blue-600" />
+                <CardTitle>tRPC over MessagePort (実験的)</CardTitle>
+              </div>
+              <CardDescription>
+                MessagePort経由のtRPC通信をテストします。型安全なBackend API通信の実証実験です。
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button
+                onClick={handleTrpcTest}
+                disabled={trpcTesting}
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                {trpcTesting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Testing...
+                  </>
+                ) : (
+                  <>
+                    <Zap className="mr-2 h-4 w-4" />
+                    Test tRPC Ping
+                  </>
+                )}
+              </Button>
+              {trpcResult && (
+                <div
+                  className={`mt-4 p-3 rounded text-sm ${
+                    trpcResult.startsWith('Success')
+                      ? 'bg-blue-50 text-blue-800 border border-blue-200'
+                      : 'bg-orange-50 text-orange-800 border border-orange-200'
+                  }`}
+                >
+                  <pre className="whitespace-pre-wrap font-mono text-xs">{trpcResult}</pre>
+                </div>
+              )}
+              <div className="mt-4 p-3 bg-gray-50 rounded text-xs text-gray-600">
+                <p className="font-semibold mb-1">技術詳細:</p>
+                <ul className="list-disc list-inside space-y-1">
+                  <li>通信方式: Renderer → MessagePort → Backend</li>
+                  <li>型安全性: tRPC + TypeScript</li>
+                  <li>実装: カスタムMessagePortLink</li>
+                </ul>
               </div>
             </CardContent>
           </Card>
