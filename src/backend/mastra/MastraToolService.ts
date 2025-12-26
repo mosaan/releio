@@ -10,6 +10,7 @@ import type { ToolAction } from '@mastra/core/tools'
 import { z } from 'zod'
 import { mcpManager } from '../mcp'
 import logger from '../logger'
+import { toolPermissionService } from './ToolPermissionService'
 
 // JSON Schema to Zod conversion is complex, so we use a passthrough schema
 // that accepts any input matching the original JSON schema structure
@@ -156,6 +157,24 @@ export class MastraToolService {
     })
 
     return allTools
+  }
+
+  /**
+   * Get all MCP tools with permission checking from ToolPermissionService
+   *
+   * This method uses the configured permission rules from the database
+   * to determine which tools require approval.
+   *
+   * @returns Record of tool name to Mastra Tool with appropriate approval flags
+   */
+  async getAllToolsWithPermissions(): Promise<MastraToolRecord> {
+    // Preload permission rules cache for sync access during conversion
+    await toolPermissionService.preloadCache()
+
+    // Use the permission service as the checker
+    return this.getAllTools((serverId, toolName) =>
+      toolPermissionService.shouldAutoApproveSync(serverId, toolName)
+    )
   }
 
   /**

@@ -178,9 +178,7 @@ export const sessionSnapshots = sqliteTable(
     createdAt: integer('created_at').notNull(),
     updatedAt: integer('updated_at').notNull()
   },
-  (table) => [
-    index('idx_session_snapshots_kind').on(table.sessionId, table.kind)
-  ]
+  (table) => [index('idx_session_snapshots_kind').on(table.sessionId, table.kind)]
 )
 
 export type SelectSessionSnapshot = InferSelectModel<typeof sessionSnapshots>
@@ -196,9 +194,7 @@ export const modelConfigs = sqliteTable(
     maxInputTokens: integer('max_input_tokens').notNull(),
     maxOutputTokens: integer('max_output_tokens').notNull(),
     defaultCompressionThreshold: real('default_compression_threshold').notNull().default(0.95),
-    recommendedRetentionTokens: integer('recommended_retention_tokens')
-      .notNull()
-      .default(1000),
+    recommendedRetentionTokens: integer('recommended_retention_tokens').notNull().default(1000),
     source: text('source').notNull(), // 'api' | 'manual' | 'default'
     lastUpdated: integer('last_updated', { mode: 'timestamp' }).notNull(),
     createdAt: integer('created_at', { mode: 'timestamp' }).notNull()
@@ -208,3 +204,25 @@ export const modelConfigs = sqliteTable(
 
 export type SelectModelConfig = InferSelectModel<typeof modelConfigs>
 export type InsertModelConfig = InferInsertModel<typeof modelConfigs>
+
+// Tool Permission Rules table for HITL tool execution control
+export const toolPermissionRules = sqliteTable(
+  'tool_permission_rules',
+  {
+    id: text('id').notNull().primaryKey(),
+    serverId: text('server_id'), // null = all servers
+    toolName: text('tool_name'), // null = all tools
+    toolPattern: text('tool_pattern'), // wildcard pattern like "delete_*"
+    autoApprove: integer('auto_approve').notNull(), // 1=auto, 0=require approval
+    priority: integer('priority').notNull().default(0), // higher = evaluated first
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull()
+  },
+  (table) => [
+    index('idx_tool_permission_rules_server').on(table.serverId),
+    index('idx_tool_permission_rules_priority').on(table.priority)
+  ]
+)
+
+export type SelectToolPermissionRule = InferSelectModel<typeof toolPermissionRules>
+export type InsertToolPermissionRule = InferInsertModel<typeof toolPermissionRules>
