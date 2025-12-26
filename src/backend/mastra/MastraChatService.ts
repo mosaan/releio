@@ -311,17 +311,17 @@ export class MastraChatService {
   }
 
   /**
-   * Load tools from MastraToolService
-   * For Phase 2, all tools are auto-approved (no HITL)
-   * Phase 3 will add permission checking
+   * Load tools from MastraToolService with permission checking
+   * Uses ToolPermissionService to determine which tools require approval
    */
   private async loadTools(): Promise<MastraToolRecord> {
     try {
-      const tools = await mastraToolService.getAllTools()
+      // Phase 3: Use permission-aware tool loading
+      const tools = await mastraToolService.getAllToolsWithPermissions()
       const toolNames = Object.keys(tools)
 
       if (toolNames.length > 0) {
-        logger.info('[Mastra] Tools loaded', {
+        logger.info('[Mastra] Tools loaded with permissions', {
           count: toolNames.length,
           tools: toolNames
         })

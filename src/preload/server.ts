@@ -6,6 +6,7 @@ import logger from './logger'
 export class Server {
   private _backendConnectionPromise?: Promise<void>
   private _backendConnection: Connection | null = null
+  private _messagePort: MessagePort | null = null
 
   public readonly mainAPI: RendererMainAPI = {
     ping: (...args) => ipcRenderer.invoke('ping', ...args),
@@ -43,7 +44,8 @@ export class Server {
     // Model Management APIs
     addModelToConfiguration: (...args) => this._invoke('addModelToConfiguration', ...args),
     updateModelInConfiguration: (...args) => this._invoke('updateModelInConfiguration', ...args),
-    deleteModelFromConfiguration: (...args) => this._invoke('deleteModelFromConfiguration', ...args),
+    deleteModelFromConfiguration: (...args) =>
+      this._invoke('deleteModelFromConfiguration', ...args),
     refreshModelsFromAPI: (...args) => this._invoke('refreshModelsFromAPI', ...args),
     // MCP Server Management
     listMCPServers: (...args) => this._invoke('listMCPServers', ...args),
@@ -61,7 +63,8 @@ export class Server {
     // Certificate settings
     getCertificateSettings: (...args) => this._invoke('getCertificateSettings', ...args),
     setCertificateSettings: (...args) => this._invoke('setCertificateSettings', ...args),
-    getSystemCertificateSettings: (...args) => this._invoke('getSystemCertificateSettings', ...args),
+    getSystemCertificateSettings: (...args) =>
+      this._invoke('getSystemCertificateSettings', ...args),
     // Connection tests
     testProxyConnection: (...args) => this._invoke('testProxyConnection', ...args),
     testCertificateConnection: (...args) => this._invoke('testCertificateConnection', ...args),
@@ -87,7 +90,22 @@ export class Server {
     getCompressionPreview: (...args) => this._invoke('getCompressionPreview', ...args),
     compressConversation: (...args) => this._invoke('compressConversation', ...args),
     getCompressionSummaries: (...args) => this._invoke('getCompressionSummaries', ...args),
-    onEvent: (channel: string, callback: (appEvent: AppEvent) => void, options?: { replayLast?: boolean }) => {
+    // tRPC over Connection
+    invokeTRPC: (...args) => this._invoke('invokeTRPC', ...args),
+    // Tool Permission Management
+    listToolPermissionRules: (...args) => this._invoke('listToolPermissionRules', ...args),
+    getToolPermissionRule: (...args) => this._invoke('getToolPermissionRule', ...args),
+    createToolPermissionRule: (...args) => this._invoke('createToolPermissionRule', ...args),
+    updateToolPermissionRule: (...args) => this._invoke('updateToolPermissionRule', ...args),
+    deleteToolPermissionRule: (...args) => this._invoke('deleteToolPermissionRule', ...args),
+    // HITL Tool Approval
+    approveToolCall: (...args) => this._invoke('approveToolCall', ...args),
+    declineToolCall: (...args) => this._invoke('declineToolCall', ...args),
+    onEvent: (
+      channel: string,
+      callback: (appEvent: AppEvent) => void,
+      options?: { replayLast?: boolean }
+    ) => {
       this._backendConnection!.onEvent(channel, callback, options)
     },
     offEvent: (channel: string) => {
@@ -108,6 +126,7 @@ export class Server {
       ipcRenderer.on('backendConnected', (event) => {
         const [port] = event.ports
         this._backendConnection = new Connection(port)
+        this._messagePort = port // tRPC用にMessagePortを保存
 
         logger.info('Backend connection established')
         resolve()
@@ -123,5 +142,13 @@ export class Server {
     })
 
     return this._backendConnectionPromise
+  }
+
+  /**
+   * tRPC用にMessagePortを取得
+   * @returns MessagePort または null
+   */
+  getMessagePort(): MessagePort | null {
+    return this._messagePort
   }
 }

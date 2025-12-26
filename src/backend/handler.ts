@@ -35,9 +35,21 @@ import logger from './logger'
 import { streamText, abortStream, listAvailableModel, testConnection } from './ai'
 import { FACTORY } from './ai/factory'
 import { mcpManager } from './mcp'
-import { getProxySettings as loadProxySettings, setProxySettings as saveProxySettings, getSystemProxySettings as loadSystemProxySettings } from './settings/proxy'
-import { getCertificateSettings as loadCertificateSettings, setCertificateSettings as saveCertificateSettings, getSystemCertificateSettings as loadSystemCertificateSettings } from './settings/certificate'
-import { testProxyConnection as runProxyTest, testCertificateConnection as runCertificateTest, testCombinedConnection as runCombinedTest } from './settings/connectionTest'
+import {
+  getProxySettings as loadProxySettings,
+  setProxySettings as saveProxySettings,
+  getSystemProxySettings as loadSystemProxySettings
+} from './settings/proxy'
+import {
+  getCertificateSettings as loadCertificateSettings,
+  setCertificateSettings as saveCertificateSettings,
+  getSystemCertificateSettings as loadSystemCertificateSettings
+} from './settings/certificate'
+import {
+  testProxyConnection as runProxyTest,
+  testCertificateConnection as runCertificateTest,
+  testCombinedConnection as runCombinedTest
+} from './settings/connectionTest'
 import {
   getAISettingsV2 as loadAISettingsV2,
   saveAISettingsV2,
@@ -67,6 +79,12 @@ import { TokenCounter } from './compression/TokenCounter'
 import { SummarizationService } from './compression/SummarizationService'
 import { ModelConfigService } from './compression/ModelConfigService'
 import { mastraChatService } from './mastra/MastraChatService'
+import {
+  toolPermissionService,
+  type CreateToolPermissionRuleInput,
+  type UpdateToolPermissionRuleInput
+} from './mastra/ToolPermissionService'
+import type { ToolPermissionRule } from '@common/types'
 
 export class Handler {
   private _rendererConnection: Connection
@@ -139,7 +157,7 @@ export class Handler {
       const { providerConfigId, modelId } = options.modelSelection
 
       // Find the provider configuration
-      const config = settings.providerConfigs.find(c => c.id === providerConfigId)
+      const config = settings.providerConfigs.find((c) => c.id === providerConfigId)
       if (!config) {
         throw new Error(`Provider configuration not found: ${providerConfigId}`)
       }
@@ -148,7 +166,7 @@ export class Handler {
       }
 
       // Find the model
-      const model = config.models.find(m => m.id === modelId)
+      const model = config.models.find((m) => m.id === modelId)
       if (!model) {
         throw new Error(`Model not found in configuration: ${modelId}`)
       }
@@ -163,7 +181,9 @@ export class Handler {
       apiKey = config.config.apiKey
       providerConfig = config.config
 
-      logger.info(`Using model selection: ${config.name} (${providerConfigId}) - ${model.displayName || model.id}`)
+      logger.info(
+        `Using model selection: ${config.name} (${providerConfigId}) - ${model.displayName || model.id}`
+      )
     } else if (options?.provider) {
       // Use explicit provider/model override
       selectedProvider = options.provider
@@ -246,7 +266,9 @@ export class Handler {
     return ok(status)
   }
 
-  async startMastraSession(resourceId?: string): Promise<Result<{ sessionId: string; threadId: string; resourceId?: string }, string>> {
+  async startMastraSession(
+    resourceId?: string
+  ): Promise<Result<{ sessionId: string; threadId: string; resourceId?: string }, string>> {
     try {
       const session = await mastraChatService.startSession(resourceId)
       return ok({
@@ -261,11 +283,18 @@ export class Handler {
     }
   }
 
-  async streamMastraText(sessionId: string, messages: AIMessage[]): Promise<Result<string, string>> {
+  async streamMastraText(
+    sessionId: string,
+    messages: AIMessage[]
+  ): Promise<Result<string, string>> {
     try {
-      const streamId = await mastraChatService.streamText(sessionId, messages, (channel: string, event: AppEvent) => {
-        this._rendererConnection.publishEvent(channel, event)
-      })
+      const streamId = await mastraChatService.streamText(
+        sessionId,
+        messages,
+        (channel: string, event: AppEvent) => {
+          this._rendererConnection.publishEvent(channel, event)
+        }
+      )
       return ok(streamId)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to start Mastra stream'
@@ -331,7 +360,9 @@ export class Handler {
     return ok(result)
   }
 
-  async testCertificateConnection(settings: CertificateSettings): Promise<Result<ConnectionTestResult>> {
+  async testCertificateConnection(
+    settings: CertificateSettings
+  ): Promise<Result<ConnectionTestResult>> {
     const result = await runCertificateTest(settings)
     return ok(result)
   }
@@ -405,7 +436,9 @@ export class Handler {
     return ok(configs)
   }
 
-  async getProviderConfiguration(configId: string): Promise<Result<AIProviderConfiguration | undefined>> {
+  async getProviderConfiguration(
+    configId: string
+  ): Promise<Result<AIProviderConfiguration | undefined>> {
     const config = await loadProviderConfiguration(configId)
     return ok(config)
   }
@@ -447,10 +480,7 @@ export class Handler {
     return ok(undefined)
   }
 
-  async deleteModelFromConfiguration(
-    configId: string,
-    modelId: string
-  ): Promise<Result<void>> {
+  async deleteModelFromConfiguration(configId: string, modelId: string): Promise<Result<void>> {
     await deleteModelFromConfiguration(configId, modelId)
     return ok(undefined)
   }
@@ -487,7 +517,7 @@ export class Handler {
     logger.info('[getChatSession] Compression summaries', {
       sessionId,
       summaryCount: summaries.length,
-      messageCutoffIds: summaries.map(s => s.messageCutoffId)
+      messageCutoffIds: summaries.map((s) => s.messageCutoffId)
     })
 
     return ok({
@@ -665,7 +695,12 @@ export class Handler {
       // Calculate expected new token count
       // This is approximate: summary tokens + retained message tokens
       const estimatedSummaryTokens = Math.min(500, contextCheck.compressibleMessageCount * 10) // Rough estimate
-      const expectedNewTokens = estimatedSummaryTokens + (contextCheck.currentTokenCount - contextCheck.currentTokenCount * (contextCheck.compressibleMessageCount / (contextCheck.compressibleMessageCount + contextCheck.retainedMessageCount)))
+      const expectedNewTokens =
+        estimatedSummaryTokens +
+        (contextCheck.currentTokenCount -
+          contextCheck.currentTokenCount *
+            (contextCheck.compressibleMessageCount /
+              (contextCheck.compressibleMessageCount + contextCheck.retainedMessageCount)))
 
       const tokenSavings = contextCheck.currentTokenCount - expectedNewTokens
       const savingsPercentage = (tokenSavings / contextCheck.currentTokenCount) * 100
@@ -744,6 +779,140 @@ export class Handler {
     } catch (err) {
       logger.error('Failed to get compression summaries', { sessionId, error: err })
       return error(err instanceof Error ? err.message : 'Failed to get compression summaries')
+    }
+  }
+
+  // Tool Permission Management handlers
+
+  async listToolPermissionRules(): Promise<Result<ToolPermissionRule[], string>> {
+    try {
+      const rules = await toolPermissionService.listRules()
+      return ok(rules)
+    } catch (err) {
+      logger.error('Failed to list tool permission rules', { error: err })
+      return error(err instanceof Error ? err.message : 'Failed to list rules')
+    }
+  }
+
+  async getToolPermissionRule(id: string): Promise<Result<ToolPermissionRule | null, string>> {
+    try {
+      const rule = await toolPermissionService.getRule(id)
+      return ok(rule)
+    } catch (err) {
+      logger.error('Failed to get tool permission rule', { id, error: err })
+      return error(err instanceof Error ? err.message : 'Failed to get rule')
+    }
+  }
+
+  async createToolPermissionRule(
+    input: CreateToolPermissionRuleInput
+  ): Promise<Result<ToolPermissionRule, string>> {
+    try {
+      const rule = await toolPermissionService.createRule(input)
+      // Invalidate Mastra agent to reload tools with updated permissions
+      mastraChatService.invalidateAgent()
+      return ok(rule)
+    } catch (err) {
+      logger.error('Failed to create tool permission rule', { input, error: err })
+      return error(err instanceof Error ? err.message : 'Failed to create rule')
+    }
+  }
+
+  async updateToolPermissionRule(
+    id: string,
+    input: UpdateToolPermissionRuleInput
+  ): Promise<Result<ToolPermissionRule | null, string>> {
+    try {
+      const rule = await toolPermissionService.updateRule(id, input)
+      // Invalidate Mastra agent to reload tools with updated permissions
+      mastraChatService.invalidateAgent()
+      return ok(rule)
+    } catch (err) {
+      logger.error('Failed to update tool permission rule', { id, input, error: err })
+      return error(err instanceof Error ? err.message : 'Failed to update rule')
+    }
+  }
+
+  async deleteToolPermissionRule(id: string): Promise<Result<boolean, string>> {
+    try {
+      const deleted = await toolPermissionService.deleteRule(id)
+      // Invalidate Mastra agent to reload tools with updated permissions
+      mastraChatService.invalidateAgent()
+      return ok(deleted)
+    } catch (err) {
+      logger.error('Failed to delete tool permission rule', { id, error: err })
+      return error(err instanceof Error ? err.message : 'Failed to delete rule')
+    }
+  }
+
+  // HITL Tool Approval handlers
+
+  async approveToolCall(runId: string, toolCallId?: string): Promise<Result<void, string>> {
+    try {
+      // TODO: Phase 3.2 - Implement actual Mastra approval integration
+      // For now, this is a placeholder that will be connected to Mastra's HITL system
+      logger.info('[HITL] Tool call approved', { runId, toolCallId })
+      return ok(undefined)
+    } catch (err) {
+      logger.error('[HITL] Failed to approve tool call', { runId, toolCallId, error: err })
+      return error(err instanceof Error ? err.message : 'Failed to approve tool call')
+    }
+  }
+
+  async declineToolCall(
+    runId: string,
+    toolCallId?: string,
+    reason?: string
+  ): Promise<Result<void, string>> {
+    try {
+      // TODO: Phase 3.2 - Implement actual Mastra decline integration
+      // For now, this is a placeholder that will be connected to Mastra's HITL system
+      logger.info('[HITL] Tool call declined', { runId, toolCallId, reason })
+      return ok(undefined)
+    } catch (err) {
+      logger.error('[HITL] Failed to decline tool call', { runId, toolCallId, error: err })
+      return error(err instanceof Error ? err.message : 'Failed to decline tool call')
+    }
+  }
+
+  /**
+   * tRPC リクエストを処理
+   */
+  async invokeTRPC(request: {
+    path: string
+    input: unknown
+    type: string
+  }): Promise<Result<unknown, string>> {
+    try {
+      const { path, input } = request
+
+      logger.info('tRPC request via Connection', { path, input })
+
+      // tRPC router から caller を作成
+      const { backendRouter } = await import('./trpc/router')
+      const caller = backendRouter.createCaller({})
+
+      // Path を使って procedure を呼び出す
+      // 例: "ping" -> caller.ping()
+      const pathParts = path.split('.')
+      let procedure: any = caller
+
+      for (const part of pathParts) {
+        procedure = procedure[part]
+        if (!procedure) {
+          logger.error('tRPC procedure not found', { path })
+          return error(`Procedure ${path} not found`)
+        }
+      }
+
+      // Procedure を実行（query または mutation）
+      const result = await procedure(input)
+
+      logger.info('tRPC request successful', { path })
+      return ok(result)
+    } catch (err) {
+      logger.error('tRPC request failed', { error: err })
+      return error(err instanceof Error ? err.message : 'tRPC request failed')
     }
   }
 }

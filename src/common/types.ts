@@ -20,6 +20,78 @@ export interface ToolResultPayload {
   output: unknown
 }
 
+// HITL (Human-in-the-Loop) Tool Approval Types
+
+/**
+ * Payload for tool approval request event
+ * Sent when a tool with requireApproval=true is called
+ */
+export interface ToolApprovalRequestPayload {
+  sessionId: string
+  streamId: string
+  runId: string
+  toolCallId: string
+  toolName: string
+  serverId: string
+  input: unknown
+}
+
+/**
+ * Payload for tool approval resolution event
+ * Sent when user approves or declines a tool call
+ */
+export interface ToolApprovalResolvedPayload {
+  sessionId: string
+  streamId: string
+  runId: string
+  toolCallId: string
+  toolName: string
+  approved: boolean
+  /** Reason for decline (if declined) */
+  reason?: string
+}
+
+/**
+ * Tool permission rule for HITL control
+ */
+export interface ToolPermissionRule {
+  id: string
+  /** MCP server ID (null = all servers) */
+  serverId: string | null
+  /** Exact tool name (null = use pattern or all tools) */
+  toolName: string | null
+  /** Wildcard pattern like "delete_*" (null = use toolName or all tools) */
+  toolPattern: string | null
+  /** Whether to auto-approve matching tools */
+  autoApprove: boolean
+  /** Higher priority rules are evaluated first */
+  priority: number
+  createdAt: string
+  updatedAt: string
+}
+
+/**
+ * Input for creating a new permission rule
+ */
+export interface CreateToolPermissionRuleInput {
+  serverId?: string | null
+  toolName?: string | null
+  toolPattern?: string | null
+  autoApprove: boolean
+  priority?: number
+}
+
+/**
+ * Input for updating an existing permission rule
+ */
+export interface UpdateToolPermissionRuleInput {
+  serverId?: string | null
+  toolName?: string | null
+  toolPattern?: string | null
+  autoApprove?: boolean
+  priority?: number
+}
+
 export interface AIConfig {
   provider: AIProvider
   model: string
@@ -193,7 +265,11 @@ export interface BackendMainAPI {
 }
 
 export interface BackendListenerAPI {
-  onEvent: (channel: string, callback: (appEvent: AppEvent) => void, options?: { replayLast?: boolean }) => void
+  onEvent: (
+    channel: string,
+    callback: (appEvent: AppEvent) => void,
+    options?: { replayLast?: boolean }
+  ) => void
   offEvent: (channel: string) => void
 }
 
@@ -304,11 +380,11 @@ export interface CompressionSummary {
 
 // Options for AI text streaming
 export interface StreamAIOptions {
-  modelSelection?: AIModelSelection  // Use specific model selection (providerConfigId + modelId)
-  provider?: AIProvider              // Override provider
-  model?: string                     // Override model
-  parameters?: Record<string, unknown>  // Override parameters
-  chatSessionId?: string             // Chat session ID for message persistence
+  modelSelection?: AIModelSelection // Use specific model selection (providerConfigId + modelId)
+  provider?: AIProvider // Override provider
+  model?: string // Override model
+  parameters?: Record<string, unknown> // Override parameters
+  chatSessionId?: string // Chat session ID for message persistence
 }
 
 export interface RendererBackendAPI {
@@ -332,18 +408,34 @@ export interface RendererBackendAPI {
   saveAISettingsV2: (settings: AISettingsV2) => Promise<Result<void>>
   // Provider Configuration APIs
   getProviderConfigurations: () => Promise<Result<AIProviderConfiguration[]>>
-  getProviderConfiguration: (configId: string) => Promise<Result<AIProviderConfiguration | undefined>>
-  createProviderConfiguration: (config: Omit<AIProviderConfiguration, 'id' | 'createdAt' | 'updatedAt'>) => Promise<Result<string>>
-  updateProviderConfiguration: (configId: string, updates: Partial<Omit<AIProviderConfiguration, 'id' | 'createdAt'>>) => Promise<Result<void>>
+  getProviderConfiguration: (
+    configId: string
+  ) => Promise<Result<AIProviderConfiguration | undefined>>
+  createProviderConfiguration: (
+    config: Omit<AIProviderConfiguration, 'id' | 'createdAt' | 'updatedAt'>
+  ) => Promise<Result<string>>
+  updateProviderConfiguration: (
+    configId: string,
+    updates: Partial<Omit<AIProviderConfiguration, 'id' | 'createdAt'>>
+  ) => Promise<Result<void>>
   deleteProviderConfiguration: (configId: string) => Promise<Result<void>>
   // Model Management APIs
-  addModelToConfiguration: (configId: string, model: Omit<AIModelDefinition, 'source' | 'addedAt'>) => Promise<Result<void>>
-  updateModelInConfiguration: (configId: string, modelId: string, updates: Partial<Omit<AIModelDefinition, 'id' | 'source' | 'addedAt'>>) => Promise<Result<void>>
+  addModelToConfiguration: (
+    configId: string,
+    model: Omit<AIModelDefinition, 'source' | 'addedAt'>
+  ) => Promise<Result<void>>
+  updateModelInConfiguration: (
+    configId: string,
+    modelId: string,
+    updates: Partial<Omit<AIModelDefinition, 'id' | 'source' | 'addedAt'>>
+  ) => Promise<Result<void>>
   deleteModelFromConfiguration: (configId: string, modelId: string) => Promise<Result<void>>
   refreshModelsFromAPI: (configId: string) => Promise<Result<AIModelDefinition[]>>
   // MCP Server Management
   listMCPServers: () => Promise<Result<MCPServerWithStatus[]>>
-  addMCPServer: (config: Omit<MCPServerConfig, 'id' | 'createdAt' | 'updatedAt'>) => Promise<Result<string>>
+  addMCPServer: (
+    config: Omit<MCPServerConfig, 'id' | 'createdAt' | 'updatedAt'>
+  ) => Promise<Result<string>>
   updateMCPServer: (serverId: string, updates: Partial<MCPServerConfig>) => Promise<Result<void>>
   removeMCPServer: (serverId: string) => Promise<Result<void>>
   getMCPResources: (serverId: string) => Promise<Result<MCPResource[]>>
@@ -360,27 +452,43 @@ export interface RendererBackendAPI {
   getSystemCertificateSettings: () => Promise<Result<CertificateSettings>>
   // Connection tests
   testProxyConnection: (settings: ProxySettings) => Promise<Result<ConnectionTestResult>>
-  testCertificateConnection: (settings: CertificateSettings) => Promise<Result<ConnectionTestResult>>
+  testCertificateConnection: (
+    settings: CertificateSettings
+  ) => Promise<Result<ConnectionTestResult>>
   testCombinedConnection: (
     proxySettings: ProxySettings,
     certSettings: CertificateSettings
   ) => Promise<Result<ConnectionTestResult>>
   testFullConnection: () => Promise<Result<ConnectionTestResult, string>>
   // Chat Session Management
-  createChatSession: (request: import('./chat-types').CreateSessionRequest) => Promise<Result<string>>
-  getChatSession: (sessionId: string) => Promise<Result<import('./chat-types').ChatSessionWithMessages | null>>
-  listChatSessions: (options?: import('./chat-types').ListSessionsOptions) => Promise<Result<import('./chat-types').ChatSessionRow[]>>
-  updateChatSession: (sessionId: string, updates: import('./chat-types').SessionUpdates) => Promise<Result<void>>
+  createChatSession: (
+    request: import('./chat-types').CreateSessionRequest
+  ) => Promise<Result<string>>
+  getChatSession: (
+    sessionId: string
+  ) => Promise<Result<import('./chat-types').ChatSessionWithMessages | null>>
+  listChatSessions: (
+    options?: import('./chat-types').ListSessionsOptions
+  ) => Promise<Result<import('./chat-types').ChatSessionRow[]>>
+  updateChatSession: (
+    sessionId: string,
+    updates: import('./chat-types').SessionUpdates
+  ) => Promise<Result<void>>
   deleteChatSession: (sessionId: string) => Promise<Result<void>>
   searchChatSessions: (query: string) => Promise<Result<import('./chat-types').ChatSessionRow[]>>
   addChatMessage: (request: import('./chat-types').AddMessageRequest) => Promise<Result<string>>
-  recordToolInvocationResult: (request: import('./chat-types').RecordToolInvocationResultRequest) => Promise<Result<void>>
+  recordToolInvocationResult: (
+    request: import('./chat-types').RecordToolInvocationResultRequest
+  ) => Promise<Result<void>>
   deleteMessagesAfter: (sessionId: string, messageId: string) => Promise<Result<void>>
   getLastSessionId: () => Promise<Result<string | null>>
   setLastSessionId: (sessionId: string) => Promise<Result<void>>
   // Compression APIs
   getCompressionSettings: (sessionId: string) => Promise<Result<CompressionSettings>>
-  setCompressionSettings: (sessionId: string, settings: CompressionSettings) => Promise<Result<void, string>>
+  setCompressionSettings: (
+    sessionId: string,
+    settings: CompressionSettings
+  ) => Promise<Result<void, string>>
   getTokenUsage: (
     sessionId: string,
     provider: string,
@@ -407,6 +515,30 @@ export interface RendererBackendAPI {
     retentionTokenCount?: number
   ) => Promise<Result<CompressionResult, string>>
   getCompressionSummaries: (sessionId: string) => Promise<Result<CompressionSummary[], string>>
+  // tRPC over Connection
+  invokeTRPC: (request: {
+    path: string
+    input: unknown
+    type: string
+  }) => Promise<Result<unknown, string>>
+  // Tool Permission Management
+  listToolPermissionRules: () => Promise<Result<ToolPermissionRule[], string>>
+  getToolPermissionRule: (id: string) => Promise<Result<ToolPermissionRule | null, string>>
+  createToolPermissionRule: (
+    input: CreateToolPermissionRuleInput
+  ) => Promise<Result<ToolPermissionRule, string>>
+  updateToolPermissionRule: (
+    id: string,
+    input: UpdateToolPermissionRuleInput
+  ) => Promise<Result<ToolPermissionRule | null, string>>
+  deleteToolPermissionRule: (id: string) => Promise<Result<boolean, string>>
+  // HITL Tool Approval
+  approveToolCall: (runId: string, toolCallId?: string) => Promise<Result<void, string>>
+  declineToolCall: (
+    runId: string,
+    toolCallId?: string,
+    reason?: string
+  ) => Promise<Result<void, string>>
 }
 
 export interface RendererMainAPI {
@@ -426,8 +558,8 @@ export interface MCPServerConfig {
   command: string
   args: string[]
   env?: Record<string, string>
-  enabled: boolean           // Server will be automatically started when enabled
-  includeResources: boolean  // Include resources as tools (default: false)
+  enabled: boolean // Server will be automatically started when enabled
+  includeResources: boolean // Include resources as tools (default: false)
   createdAt: Date
   updatedAt: Date
 }
@@ -457,7 +589,7 @@ export interface MCPResource {
 export interface MCPTool {
   name: string
   description?: string
-  inputSchema: object  // JSON Schema
+  inputSchema: object // JSON Schema
 }
 
 // MCP Prompt (reusable prompt template)
@@ -521,9 +653,7 @@ export interface UpdateInfo {
   releaseNotes?: string
 }
 
-export type UpdateCheckResult =
-  | { available: false }
-  | { available: true; updateInfo: UpdateInfo }
+export type UpdateCheckResult = { available: false } | { available: true; updateInfo: UpdateInfo }
 
 export interface UpdateProgressInfo {
   bytesPerSecond: number
