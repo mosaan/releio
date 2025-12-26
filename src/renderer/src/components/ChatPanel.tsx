@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
-import { Settings, AlertCircle, Archive, MessageCircle } from 'lucide-react'
+import { Settings, AlertCircle, Archive } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
 import { Thread } from '@renderer/components/assistant-ui/thread'
 import { AIRuntimeProvider } from '@renderer/components/AIRuntimeProvider'
@@ -20,10 +20,9 @@ import { logger } from '@renderer/lib/logger'
 
 interface ChatPanelProps {
   onSettings: () => void
-  onMastra?: () => void
 }
 
-export function ChatPanel({ onSettings, onMastra }: ChatPanelProps): React.JSX.Element {
+export function ChatPanel({ onSettings }: ChatPanelProps): React.JSX.Element {
   const {
     currentSession,
     currentSessionId,
@@ -220,12 +219,6 @@ export function ChatPanel({ onSettings, onMastra }: ChatPanelProps): React.JSX.E
               modelSelection={modelSelection}
               currentSession={currentSession}
             />
-            {onMastra && (
-              <Button variant="outline" size="sm" onClick={onMastra} className="gap-1">
-                <MessageCircle className="h-4 w-4" />
-                <span className="hidden sm:inline">Mastra MVP</span>
-              </Button>
-            )}
             {currentSessionId && modelSelection && apiKey && (
               <Button
                 variant="outline"

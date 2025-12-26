@@ -4,12 +4,11 @@ import { Button } from '@renderer/components/ui/button'
 import { Settings } from '@renderer/components/Settings'
 import { ChatPageWithSessions } from '@renderer/components/ChatPageWithSessions'
 import { UpdateNotification } from '@renderer/components/UpdateNotification'
-import { MastraMvpChat } from '@renderer/components/MastraMvpChat'
 import { logger } from '@renderer/lib/logger'
 import { isOk } from '@common/result'
 
 function App() {
-  const [currentPage, setCurrentPage] = useState<'home' | 'settings' | 'chat' | 'mastra'>('home')
+  const [currentPage, setCurrentPage] = useState<'home' | 'settings' | 'chat'>('home')
   const [backendConnected, setBackendConnected] = useState(false)
   const [isCheckingSettings, setIsCheckingSettings] = useState(true)
   const [connectionError, setConnectionError] = useState<string | null>(null)
@@ -28,8 +27,7 @@ function App() {
         const settingsResult = await window.backend.getAISettingsV2()
         if (isOk(settingsResult)) {
           const hasProviderConfigs =
-            settingsResult.value?.providerConfigs &&
-            settingsResult.value.providerConfigs.length > 0
+            settingsResult.value?.providerConfigs && settingsResult.value.providerConfigs.length > 0
 
           if (hasProviderConfigs) {
             // AI is configured, go directly to chat
@@ -47,9 +45,7 @@ function App() {
         }
       } catch (error) {
         logger.error('Failed to connect to backend:', error)
-        setConnectionError(
-          error instanceof Error ? error.message : 'Failed to connect to backend'
-        )
+        setConnectionError(error instanceof Error ? error.message : 'Failed to connect to backend')
       } finally {
         setIsCheckingSettings(false)
       }
@@ -67,7 +63,9 @@ function App() {
     const handleBackendExit = () => {
       logger.error('Backend process exited unexpectedly')
       setBackendConnected(false)
-      setConnectionError('Backend process exited unexpectedly. This may be due to a database migration error or other initialization failure.')
+      setConnectionError(
+        'Backend process exited unexpectedly. This may be due to a database migration error or other initialization failure.'
+      )
     }
 
     window.backend.onEvent('backendExited', handleBackendExit)
@@ -83,10 +81,6 @@ function App() {
 
   const handleChatClick = (): void => {
     setCurrentPage('chat')
-  }
-
-  const handleMastraClick = (): void => {
-    setCurrentPage('mastra')
   }
 
   const handleRetryConnection = (): void => {
@@ -151,11 +145,7 @@ function App() {
   }
 
   if (currentPage === 'chat') {
-    return <ChatPageWithSessions onSettings={handleSettingsClick} onMastra={handleMastraClick} />
-  }
-
-  if (currentPage === 'mastra') {
-    return <MastraMvpChat onBack={() => setCurrentPage('home')} onOpenSettings={handleSettingsClick} />
+    return <ChatPageWithSessions onSettings={handleSettingsClick} />
   }
 
   return (
@@ -217,14 +207,6 @@ function App() {
               >
                 <SettingsIcon className="h-4 w-4" />
                 Settings
-              </Button>
-              <Button
-                variant="outline"
-                onClick={handleMastraClick}
-                className="flex items-center gap-2 backdrop-blur-sm bg-white/50 hover:bg-white/80 border-2 border-indigo-200 hover:border-indigo-400 transition-all duration-300"
-              >
-                <MessageCircle className="h-4 w-4" />
-                Mastra MVP
               </Button>
             </div>
           </div>

@@ -4,10 +4,9 @@ import { ChatPanel } from '@renderer/components/ChatPanel'
 
 interface ChatPageWithSessionsProps {
   onSettings: () => void
-  onMastra?: () => void
 }
 
-export function ChatPageWithSessions({ onSettings, onMastra }: ChatPageWithSessionsProps): React.JSX.Element {
+export function ChatPageWithSessions({ onSettings }: ChatPageWithSessionsProps): React.JSX.Element {
   return (
     <SessionManagerProvider>
       <div className="h-screen flex overflow-hidden">
@@ -18,7 +17,7 @@ export function ChatPageWithSessions({ onSettings, onMastra }: ChatPageWithSessi
 
         {/* Main Chat Area */}
         <div className="flex-1 min-w-0">
-          <ChatPanel onSettings={onSettings} onMastra={onMastra} />
+          <ChatPanel onSettings={onSettings} />
         </div>
       </div>
     </SessionManagerProvider>

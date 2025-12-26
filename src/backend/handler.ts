@@ -142,7 +142,11 @@ export class Handler {
     return ok(logPath)
   }
 
-  // AI handlers
+  // AI handlers (v1 - deprecated)
+  /**
+   * Stream AI text using v1 AI SDK integration.
+   * @deprecated Use streamMastraText instead. This v1 streaming method will be removed in a future version.
+   */
   async streamAIText(messages: AIMessage[], options?: StreamAIOptions): Promise<Result<string>> {
     let selectedProvider: AIProvider
     let selectedModel: string
@@ -240,6 +244,10 @@ export class Handler {
     return ok(sessionId)
   }
 
+  /**
+   * Abort an AI text streaming session.
+   * @deprecated Use abortMastraStream instead. This v1 abort method will be removed in a future version.
+   */
   async abortAIText(sessionId: string): Promise<Result<void>> {
     const success = abortStream(sessionId)
     if (success) {
@@ -250,11 +258,19 @@ export class Handler {
     return ok(undefined)
   }
 
+  /**
+   * Get available AI models for a provider.
+   * @deprecated Use provider configuration models instead. This v1 method will be removed in a future version.
+   */
   async getAIModels(provider: AIProvider): Promise<Result<string[]>> {
     const models = await listAvailableModel(provider)
     return ok(models)
   }
 
+  /**
+   * Test AI provider connection.
+   * @deprecated Use Mastra agent status checks instead. This v1 method will be removed in a future version.
+   */
   async testAIProviderConnection(config: AIConfig): Promise<Result<boolean>> {
     const result = await testConnection(config)
     return ok(result)
