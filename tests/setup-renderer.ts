@@ -44,7 +44,15 @@ Object.defineProperty(window, 'backend', {
     abortAIText: vi.fn(),
     onEvent: vi.fn(),
     offEvent: vi.fn(),
-    getAISettingsV2: vi.fn()
+    getAISettingsV2: vi.fn(),
+    // HITL Tool Permission APIs
+    listToolPermissionRules: vi.fn(),
+    getToolPermissionRule: vi.fn(),
+    createToolPermissionRule: vi.fn(),
+    updateToolPermissionRule: vi.fn(),
+    deleteToolPermissionRule: vi.fn(),
+    approveToolCall: vi.fn(),
+    declineToolCall: vi.fn()
   },
   writable: true,
   configurable: true
