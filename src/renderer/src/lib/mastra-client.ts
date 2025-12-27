@@ -36,15 +36,16 @@ export async function startMastraSession(resourceId?: string): Promise<MastraSes
 }
 
 export async function streamMastraText(
-  sessionId: string,
+  mastraSessionId: string,
   messages: AIMessage[],
-  abortSignal: AbortSignal
+  abortSignal: AbortSignal,
+  chatSessionId?: string
 ): Promise<AsyncGenerator<MastraStreamChunk, void, unknown>> {
-  const result = await window.backend.streamMastraText(sessionId, messages)
+  const result = await window.backend.streamMastraText(mastraSessionId, messages, chatSessionId)
 
   if (isOk(result)) {
     const streamId = result.value
-    return receiveStream(streamId, sessionId, abortSignal)
+    return receiveStream(streamId, mastraSessionId, abortSignal)
   } else {
     logger.error('Failed to start Mastra stream:', result.error)
     throw new Error(`Failed to start Mastra chat stream: ${result.error}`)

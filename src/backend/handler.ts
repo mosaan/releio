@@ -158,15 +158,40 @@ export class Handler {
   }
 
   async streamMastraText(
-    sessionId: string,
-    messages: AIMessage[]
+    mastraSessionId: string,
+    messages: AIMessage[],
+    chatSessionId?: string
   ): Promise<Result<string, string>> {
     try {
       const streamId = await mastraChatService.streamText(
-        sessionId,
+        mastraSessionId,
         messages,
         (channel: string, event: AppEvent) => {
           this._rendererConnection.publishEvent(channel, event)
+        },
+        async (parts) => {
+          // Only save to DB if chatSessionId is provided
+          if (!chatSessionId) {
+            logger.warn('[Mastra] No chatSessionId provided, skipping DB save')
+            return
+          }
+
+          logger.info('[Mastra] Saving assistant message to DB', {
+            chatSessionId,
+            mastraSessionId,
+            partsCount: parts.length
+          })
+
+          try {
+            await this._sessionStore.addMessage({
+              sessionId: chatSessionId,
+              role: 'assistant',
+              parts: parts as any // Cast to match AddMessageRequest parts type
+            })
+            logger.info('[Mastra] Assistant message saved successfully')
+          } catch (err) {
+            logger.error('[Mastra] Failed to save assistant message', err)
+          }
         }
       )
       return ok(streamId)
