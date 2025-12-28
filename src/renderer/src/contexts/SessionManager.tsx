@@ -244,21 +244,38 @@ export function SessionManagerProvider({
   // Switch to different session
   const switchSession = useCallback(
     async (sessionId: string) => {
+      // Store previous session ID for error recovery
+      const previousSessionId = currentSessionId
+
       try {
+        // Clear current session state immediately to prevent stale data
+        setCurrentSession(null)
+        setIsLoading(true)
+
+        // Update session ID
         setCurrentSessionId(sessionId)
 
-        // Save last session ID
+        // Save last session ID to backend
         await window.backend.setLastSessionId(sessionId)
 
-        // Load session details
+        // Load new session details
         await loadCurrentSession(sessionId)
 
         logger.info(`Switched to session: ${sessionId}`)
       } catch (error) {
         logger.error('Error switching session:', error)
+
+        // Error recovery: revert to previous session
+        if (previousSessionId) {
+          logger.info(`Reverting to previous session: ${previousSessionId}`)
+          setCurrentSessionId(previousSessionId)
+          await loadCurrentSession(previousSessionId)
+        }
+      } finally {
+        setIsLoading(false)
       }
     },
-    [loadCurrentSession]
+    [currentSessionId, loadCurrentSession]
   )
 
   // Update session metadata
