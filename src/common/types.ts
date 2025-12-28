@@ -20,6 +20,26 @@ export interface ToolResultPayload {
   output: unknown
 }
 
+// Message save event payloads
+export interface MessageSaveSuccessPayload {
+  sessionId: string
+  messageId: string
+  success: true
+}
+
+export interface MessageSaveFailurePayload {
+  sessionId: string
+  error: string
+  parts: Array<{
+    kind: 'text' | 'tool_invocation' | 'tool_result'
+    content?: string
+    toolCallId?: string
+    toolName?: string
+    input?: unknown
+    output?: unknown
+  }>
+}
+
 // HITL (Human-in-the-Loop) Tool Approval Types
 
 /**

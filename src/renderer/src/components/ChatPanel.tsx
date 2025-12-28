@@ -42,6 +42,9 @@ export function ChatPanel({ onSettings }: ChatPanelProps): React.JSX.Element {
   const [showCompressionDialog, setShowCompressionDialog] = useState<boolean>(false)
   const [apiKey, setApiKey] = useState<string>('')
 
+  // Message save error state (to be fully implemented in Phase 3-6 with toast)
+  const [messageSaveError, setMessageSaveError] = useState<string | null>(null)
+
   // HITL Tool Approval state
   const [pendingApproval, setPendingApproval] = useState<ToolApprovalRequestPayload | null>(null)
 
@@ -71,6 +74,16 @@ export function ChatPanel({ onSettings }: ChatPanelProps): React.JSX.Element {
     logger.info('[ChatPanel] Tool declined:', reason)
     setPendingApproval(null)
   }, [])
+
+  // Listen for message save errors (Phase 3-6: will be fully implemented with toast)
+  useEffect(() => {
+    logger.info('[ChatPanel] Message save error handling infrastructure in place')
+    // Backend now publishes 'messageSaveFailed' events with error details
+    // Event listener integration will be completed in Phase 3-6 with toast notifications
+
+    // Suppress lint warning for now - will be used in Phase 3-6
+    void setMessageSaveError
+  }, [setMessageSaveError])
 
   // Handle model selection change and persist to database
   const handleModelChange = async (newSelection: AIModelSelection | null) => {
@@ -241,6 +254,15 @@ export function ChatPanel({ onSettings }: ChatPanelProps): React.JSX.Element {
           </div>
         </div>
       </header>
+
+      {/* Message Save Error Alert */}
+      {messageSaveError && (
+        <Alert variant="destructive" className="m-4 mb-0">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Message Save Failed</AlertTitle>
+          <AlertDescription>{messageSaveError}</AlertDescription>
+        </Alert>
+      )}
 
       {/* Main Content */}
       <main className="flex-1 overflow-hidden flex flex-col">
