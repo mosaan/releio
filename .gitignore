@@ -21,4 +21,4 @@ tmp
 .mcp.json
 
 # Log files
-logs/
+logs/.opencode/

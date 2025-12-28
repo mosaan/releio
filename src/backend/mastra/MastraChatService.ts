@@ -6,6 +6,7 @@ import type { AIMessage, AIProvider, AppEvent } from '@common/types'
 import { EventType } from '@common/types'
 import { getAISettingsV2 as loadAISettingsV2 } from '../settings/ai-settings'
 import { mastraToolService, type MastraToolRecord } from './MastraToolService'
+import { mcpManager } from '../mcp'
 import logger from '../logger'
 
 type SessionRecord = {
@@ -52,6 +53,18 @@ export class MastraChatService {
   private streams = new Map<string, StreamRecord>()
   private readonly defaultResourceId = 'default-resource'
 
+  constructor() {
+    // Listen for MCP server status changes to re-initialize agent when servers connect
+    mcpManager.onStatusChange((status) => {
+      if (status.status === 'connected') {
+        logger.info('[Mastra] MCP server connected, invalidating agent to reload tools', {
+          serverId: status.serverId
+        })
+        this.invalidateAgent()
+      }
+    })
+  }
+
   async getStatus(): Promise<MastraStatus> {
     try {
       const selection = await this.ensureAgent()
@@ -80,7 +93,17 @@ export class MastraChatService {
   async streamText(
     sessionId: string,
     messages: AIMessage[],
-    publishEvent: (channel: string, event: AppEvent) => void
+    publishEvent: (channel: string, event: AppEvent) => void,
+    onFinish?: (
+      parts: Array<{
+        kind: 'text' | 'tool_invocation' | 'tool_result'
+        content?: string
+        toolCallId?: string
+        toolName?: string
+        input?: unknown
+        output?: unknown
+      }>
+    ) => Promise<void>
   ): Promise<string> {
     const selection = await this.ensureAgent()
     const session = this.sessions.get(sessionId)
@@ -109,7 +132,8 @@ export class MastraChatService {
       uiMessages,
       messages,
       abortController,
-      publishEvent
+      publishEvent,
+      onFinish
     }).catch((err) => {
       logger.error('[Mastra] Streaming task failed', {
         streamId,
@@ -127,20 +151,56 @@ export class MastraChatService {
     messages: AIMessage[]
     abortController: AbortController
     publishEvent: (channel: string, event: AppEvent) => void
+    onFinish?: (
+      parts: Array<{
+        kind: 'text' | 'tool_invocation' | 'tool_result'
+        content?: string
+        toolCallId?: string
+        toolName?: string
+        input?: unknown
+        output?: unknown
+      }>
+    ) => Promise<void>
   }): Promise<void> {
-    const { streamId, session, uiMessages, messages, abortController, publishEvent } = params
+    const { streamId, session, uiMessages, messages, abortController, publishEvent, onFinish } =
+      params
 
     try {
+      logger.info('[Mastra] Starting stream with options', {
+        format: 'aisdk',
+        hasRequireToolApproval: true
+      })
+
       const stream = await this.agent!.stream(uiMessages, {
         format: 'aisdk',
+        requireToolApproval: true, // Force approval for ALL tools to debug HITL
         abortSignal: abortController.signal,
         threadId: session.threadId,
         resourceId: session.resourceId
       })
 
       let assistantText = ''
+      const parts: Array<{
+        kind: 'text' | 'tool_invocation' | 'tool_result'
+        content?: string
+        toolCallId?: string
+        toolName?: string
+        input?: unknown
+        output?: unknown
+      }> = []
+
       let chunkCount = 0
       const reader = stream.fullStream.getReader()
+
+      // Track current text block being built
+      let currentTextBlock = ''
+
+      const flushTextBlock = () => {
+        if (currentTextBlock) {
+          parts.push({ kind: 'text', content: currentTextBlock })
+          currentTextBlock = ''
+        }
+      }
 
       while (true) {
         const { value, done } = await reader.read()
@@ -155,6 +215,7 @@ export class MastraChatService {
           case 'text-delta':
             if (value.text) {
               assistantText += value.text
+              currentTextBlock += value.text
               chunkCount += 1
               logger.info('[Mastra] Chunk received', {
                 streamId,
@@ -169,6 +230,13 @@ export class MastraChatService {
             }
             break
           case 'tool-call':
+            flushTextBlock()
+            parts.push({
+              kind: 'tool_invocation',
+              toolCallId: value.toolCallId,
+              toolName: value.toolName,
+              input: value.input
+            })
             publishEvent('mastraToolCall', {
               type: EventType.Message,
               payload: {
@@ -181,8 +249,15 @@ export class MastraChatService {
             })
             break
           case 'tool-result':
+            flushTextBlock()
             // Mastra/AI SDK may surface either `result` or `output`
             const output = (value as any).result ?? (value as any).output
+            parts.push({
+              kind: 'tool_result',
+              toolCallId: value.toolCallId,
+              toolName: value.toolName,
+              output
+            })
             publishEvent('mastraToolResult', {
               type: EventType.Message,
               payload: {
@@ -218,6 +293,8 @@ export class MastraChatService {
         }
       }
 
+      flushTextBlock()
+
       if (assistantText) {
         session.history = [...messages, { role: 'assistant', content: assistantText }]
       }
@@ -226,8 +303,14 @@ export class MastraChatService {
         sessionId: session.sessionId,
         streamId,
         textLength: assistantText.length,
+        partsCount: parts.length,
         chunks: chunkCount
       })
+
+      // Call onFinish callback to persist message
+      if (onFinish) {
+        await onFinish(parts)
+      }
     } catch (err) {
       if (isAbortError(err)) {
         logger.info('[Mastra] Stream aborted', { streamId })

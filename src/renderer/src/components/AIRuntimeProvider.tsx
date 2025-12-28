@@ -198,13 +198,7 @@ export function AIRuntimeProvider({
         )
 
         // Use Mastra streaming instead of v1
-        // Pass both mastraSession (for Mastra runtime) and sessionId (for DB persistence)
-        const stream = await streamMastraText(
-          mastraSession,
-          formattedMessages,
-          abortSignal,
-          sessionId || undefined
-        )
+        const stream = await streamMastraText(mastraSession, formattedMessages, abortSignal)
 
         const contentParts: any[] = []
 

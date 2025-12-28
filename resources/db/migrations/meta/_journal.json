@@ -50,6 +50,13 @@
       "when": 1763348070325,
       "tag": "0006_lonely_pete_wisdom",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1763348070326,
+      "tag": "0007_add_tool_permission_rules",
+      "breakpoints": true
     }
   ]
 }
