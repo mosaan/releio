@@ -14,6 +14,7 @@ interface SessionManagerContextValue {
   currentSessionId: string | null
   currentSession: ChatSessionWithMessages | null
   isLoading: boolean
+  isRefreshing: boolean // NEW: セッションリフレッシュ中フラグ
 
   // Session list
   sessions: ChatSessionRow[]
@@ -49,6 +50,7 @@ export function SessionManagerProvider({
   const [currentSession, setCurrentSession] = useState<ChatSessionWithMessages | null>(null)
   const [sessions, setSessions] = useState<ChatSessionRow[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [isRefreshing, setIsRefreshing] = useState(false) // NEW: リフレッシュ状態管理
   const [modelSelection, setModelSelection] = useState<AIModelSelection | null>(null)
 
   // Mastra session state
@@ -131,8 +133,17 @@ export function SessionManagerProvider({
 
   // Refresh current session details (messages, compression summaries, etc.)
   const refreshCurrentSession = useCallback(async () => {
-    if (currentSessionId) {
+    if (!currentSessionId) return
+
+    // リフレッシュ中フラグを立てて、UIの競合状態を防止
+    setIsRefreshing(true)
+    try {
       await loadCurrentSession(currentSessionId)
+      logger.info('[SessionManager] Session refreshed successfully', { currentSessionId })
+    } catch (error) {
+      logger.error('[SessionManager] Failed to refresh session', { currentSessionId, error })
+    } finally {
+      setIsRefreshing(false)
     }
   }, [currentSessionId, loadCurrentSession])
 
@@ -311,6 +322,7 @@ export function SessionManagerProvider({
     currentSessionId,
     currentSession,
     isLoading,
+    isRefreshing, // NEW: リフレッシュ状態を公開
     sessions,
     createSession,
     switchSession,

@@ -26,6 +26,7 @@ interface AIRuntimeProviderProps {
   mastraSessionId: string | null
   initialMessages?: ChatMessageWithParts[]
   currentSession?: ChatSessionWithMessages | null
+  isRefreshing?: boolean // NEW: リフレッシュ中フラグ
   onMessageCompleted?: () => void | Promise<void>
   onToolApprovalRequired?: (request: ToolApprovalRequestPayload) => void
 }
@@ -37,6 +38,7 @@ export function AIRuntimeProvider({
   mastraSessionId,
   initialMessages,
   currentSession,
+  isRefreshing = false, // NEW: デフォルトfalse
   onMessageCompleted,
   onToolApprovalRequired
 }: AIRuntimeProviderProps): React.JSX.Element {
@@ -273,6 +275,14 @@ export function AIRuntimeProvider({
 
   // Import initial messages when session changes
   useEffect(() => {
+    // リフレッシュ中はメッセージインポートをスキップ（競合状態を防止）
+    if (isRefreshing) {
+      logger.info(
+        '[History] Refresh in progress, skipping message import to prevent race condition'
+      )
+      return
+    }
+
     if (initialMessages && initialMessages.length > 0) {
       logger.info(`[History] Loading ${initialMessages.length} messages into runtime`)
 
@@ -304,10 +314,11 @@ export function AIRuntimeProvider({
       }
     } else {
       // Clear messages when switching to a session with no history
+      // リフレッシュ中は一時的にメッセージが空になる可能性があるのでスキップ
       logger.info('[History] No initial messages, clearing runtime')
       runtime.threads.main.import(ExportedMessageRepository.fromArray([]))
     }
-  }, [chatSessionId, initialMessages, currentSession?.compressionSummaries, runtime])
+  }, [chatSessionId, initialMessages, currentSession?.compressionSummaries, runtime, isRefreshing])
 
   return <AssistantRuntimeProvider runtime={runtime}>{children}</AssistantRuntimeProvider>
 }

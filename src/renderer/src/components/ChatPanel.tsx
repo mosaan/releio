@@ -31,6 +31,7 @@ export function ChatPanel({ onSettings }: ChatPanelProps): React.JSX.Element {
     updateSession,
     refreshSessions,
     refreshCurrentSession,
+    isRefreshing, // NEW: セッションリフレッシュ状態を取得
     mastraSessionId,
     mastraStatus,
     initializeMastraSession
@@ -302,6 +303,7 @@ export function ChatPanel({ onSettings }: ChatPanelProps): React.JSX.Element {
                   mastraSessionId={mastraSessionId}
                   initialMessages={currentSession?.messages}
                   currentSession={currentSession}
+                  isRefreshing={isRefreshing} // NEW: リフレッシュ状態を渡す
                   onMessageCompleted={async () => {
                     await refreshSessions()
                     await refreshCurrentSession()
