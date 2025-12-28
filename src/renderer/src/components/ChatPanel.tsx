@@ -319,13 +319,12 @@ export function ChatPanel({ onSettings }: ChatPanelProps): React.JSX.Element {
             <div className="flex-1 overflow-hidden">
               {modelSelection && mastraSessionId ? (
                 <AIRuntimeProvider
-                  key={currentSession?.id} // Force remount when session changes
                   modelSelection={modelSelection}
                   chatSessionId={currentSession?.id}
                   mastraSessionId={mastraSessionId}
                   initialMessages={currentSession?.messages}
                   currentSession={currentSession}
-                  isRefreshing={isRefreshing} // NEW: リフレッシュ状態を渡す
+                  isRefreshing={isRefreshing}
                   onMessageCompleted={async () => {
                     await refreshSessions()
                     await refreshCurrentSession()

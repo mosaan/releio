@@ -273,7 +273,16 @@ export function AIRuntimeProvider({
 
   const runtime = useLocalRuntime(adapter)
 
-  // Import initial messages when session changes
+  // Clear runtime when session changes (not on every re-render)
+  useEffect(() => {
+    if (!chatSessionId) return
+
+    logger.info('[History] Session changed, clearing runtime', { chatSessionId })
+    // Clear runtime to prepare for new session messages
+    runtime.threads.main.import(ExportedMessageRepository.fromArray([]))
+  }, [chatSessionId, runtime])
+
+  // Load messages when they change (including initial load and updates within session)
   useEffect(() => {
     // リフレッシュ中はメッセージインポートをスキップ（競合状態を防止）
     if (isRefreshing) {
@@ -283,8 +292,15 @@ export function AIRuntimeProvider({
       return
     }
 
+    // セッションIDがない場合はスキップ
+    if (!chatSessionId) {
+      return
+    }
+
     if (initialMessages && initialMessages.length > 0) {
-      logger.info(`[History] Loading ${initialMessages.length} messages into runtime`)
+      logger.info(`[History] Loading ${initialMessages.length} messages into runtime`, {
+        chatSessionId
+      })
 
       try {
         // Convert database messages directly to ThreadMessage format
@@ -312,13 +328,11 @@ export function AIRuntimeProvider({
       } catch (error) {
         logger.error('[History] Failed to load messages:', error)
       }
-    } else {
-      // Clear messages when switching to a session with no history
-      // リフレッシュ中は一時的にメッセージが空になる可能性があるのでスキップ
-      logger.info('[History] No initial messages, clearing runtime')
-      runtime.threads.main.import(ExportedMessageRepository.fromArray([]))
+    } else if (!isRefreshing) {
+      // Only clear when not refreshing and truly no messages
+      logger.info('[History] No messages in session, keeping runtime clear')
     }
-  }, [chatSessionId, initialMessages, currentSession?.compressionSummaries, runtime, isRefreshing])
+  }, [initialMessages, currentSession?.compressionSummaries, chatSessionId, runtime, isRefreshing])
 
   return <AssistantRuntimeProvider runtime={runtime}>{children}</AssistantRuntimeProvider>
 }
