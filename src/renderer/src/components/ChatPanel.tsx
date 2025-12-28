@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
-import { Settings, AlertCircle, Archive } from 'lucide-react'
+import { Settings, AlertCircle, Archive, LoaderCircle } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
 import { Thread } from '@renderer/components/assistant-ui/thread'
 import { AIRuntimeProvider } from '@renderer/components/AIRuntimeProvider'
@@ -316,7 +316,16 @@ export function ChatPanel({ onSettings }: ChatPanelProps): React.JSX.Element {
                 </AlertDescription>
               </Alert>
             )}
-            <div className="flex-1 overflow-hidden">
+            <div className="flex-1 overflow-hidden relative">
+              {/* Loading overlay during session refresh */}
+              {isRefreshing && (
+                <div className="absolute inset-0 bg-background/50 flex items-center justify-center z-10 backdrop-blur-sm">
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <LoaderCircle className="h-5 w-5 animate-spin" />
+                    <span>Loading messages...</span>
+                  </div>
+                </div>
+              )}
               {modelSelection && mastraSessionId ? (
                 <AIRuntimeProvider
                   modelSelection={modelSelection}
