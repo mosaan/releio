@@ -78,12 +78,40 @@ export function ChatPanel({ onSettings }: ChatPanelProps): React.JSX.Element {
   // Listen for message save errors (Phase 3-6: will be fully implemented with toast)
   useEffect(() => {
     logger.info('[ChatPanel] Message save error handling infrastructure in place')
+
+    // Listen for message saved events to refresh session
+    const handleMessageSaved = async (event: any) => {
+      // Check if the event is relevant to the current session
+      if (
+        event &&
+        event.payload &&
+        event.payload.success &&
+        event.payload.sessionId === currentSessionId
+      ) {
+        logger.info('[ChatPanel] Message saved event received, refreshing session')
+        await refreshSessions()
+        await refreshCurrentSession()
+      }
+    }
+
+    // Subscribe to messageSaved event
+    if (window.backend?.onEvent) {
+      window.backend.onEvent('messageSaved', handleMessageSaved)
+    }
+
     // Backend now publishes 'messageSaveFailed' events with error details
     // Event listener integration will be completed in Phase 3-6 with toast notifications
 
     // Suppress lint warning for now - will be used in Phase 3-6
     void setMessageSaveError
-  }, [setMessageSaveError])
+
+    return () => {
+      // Cleanup listener
+      if (window.backend?.offEvent) {
+        window.backend.offEvent('messageSaved')
+      }
+    }
+  }, [currentSessionId, refreshSessions, refreshCurrentSession, setMessageSaveError])
 
   // Handle model selection change and persist to database
   const handleModelChange = async (newSelection: AIModelSelection | null) => {
@@ -335,8 +363,9 @@ export function ChatPanel({ onSettings }: ChatPanelProps): React.JSX.Element {
                   currentSession={currentSession}
                   isRefreshing={isRefreshing}
                   onMessageCompleted={async () => {
-                    await refreshSessions()
-                    await refreshCurrentSession()
+                    // Do nothing here - wait for messageSaved event from backend
+                    // This prevents race conditions where refresh happens before DB save is complete
+                    logger.info('[ChatPanel] Message streaming completed, waiting for save event')
                   }}
                   onToolApprovalRequired={handleToolApprovalRequired}
                 >
