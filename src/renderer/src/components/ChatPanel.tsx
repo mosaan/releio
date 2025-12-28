@@ -88,9 +88,10 @@ export function ChatPanel({ onSettings }: ChatPanelProps): React.JSX.Element {
         event.payload.success &&
         event.payload.sessionId === currentSessionId
       ) {
-        logger.info('[ChatPanel] Message saved event received, refreshing session')
+        logger.info('[ChatPanel] Message saved event received, refreshing session (silent)')
         await refreshSessions()
-        await refreshCurrentSession()
+        // メッセージ保存後はローディング表示を出さずに裏で更新する（ちらつき防止）
+        await refreshCurrentSession(false)
       }
     }
 

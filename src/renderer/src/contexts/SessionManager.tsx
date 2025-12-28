@@ -25,7 +25,7 @@ interface SessionManagerContextValue {
   updateSession: (sessionId: string, updates: SessionUpdates) => Promise<void>
   deleteSession: (sessionId: string) => Promise<void>
   refreshSessions: () => Promise<void>
-  refreshCurrentSession: () => Promise<void>
+  refreshCurrentSession: (showLoading?: boolean) => Promise<void>
 
   // Model selection for current session
   modelSelection: AIModelSelection | null
@@ -132,20 +132,32 @@ export function SessionManagerProvider({
   }, [])
 
   // Refresh current session details (messages, compression summaries, etc.)
-  const refreshCurrentSession = useCallback(async () => {
-    if (!currentSessionId) return
+  const refreshCurrentSession = useCallback(
+    async (showLoading: boolean = true) => {
+      if (!currentSessionId) return
 
-    // リフレッシュ中フラグを立てて、UIの競合状態を防止
-    setIsRefreshing(true)
-    try {
-      await loadCurrentSession(currentSessionId)
-      logger.info('[SessionManager] Session refreshed successfully', { currentSessionId })
-    } catch (error) {
-      logger.error('[SessionManager] Failed to refresh session', { currentSessionId, error })
-    } finally {
-      setIsRefreshing(false)
-    }
-  }, [currentSessionId, loadCurrentSession])
+      // リフレッシュ中フラグを立てて、UIの競合状態を防止
+      // showLoadingがfalseの場合はバックグラウンド更新として扱う（ローディング表示なし）
+      if (showLoading) {
+        setIsRefreshing(true)
+      }
+
+      try {
+        await loadCurrentSession(currentSessionId)
+        logger.info('[SessionManager] Session refreshed successfully', {
+          currentSessionId,
+          showLoading
+        })
+      } catch (error) {
+        logger.error('[SessionManager] Failed to refresh session', { currentSessionId, error })
+      } finally {
+        if (showLoading) {
+          setIsRefreshing(false)
+        }
+      }
+    },
+    [currentSessionId, loadCurrentSession]
+  )
 
   // Initialize: load last session ID and sessions
   useEffect(() => {
