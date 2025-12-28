@@ -159,25 +159,27 @@ export class Handler {
   }
 
   async streamMastraText(
-    sessionId: string,
+    mastraSessionId: string,
+    chatSessionId: string,
     messages: AIMessage[]
   ): Promise<Result<string, string>> {
     try {
       const streamId = await mastraChatService.streamText(
-        sessionId,
+        mastraSessionId,
         messages,
         (channel: string, event: AppEvent) => {
           this._rendererConnection.publishEvent(channel, event)
         },
         async (parts) => {
           logger.info('[Mastra] Saving assistant message to DB', {
-            sessionId,
+            mastraSessionId,
+            chatSessionId,
             partsCount: parts.length
           })
 
           try {
             const messageId = await this._sessionStore.addMessage({
-              sessionId,
+              sessionId: chatSessionId,
               role: 'assistant',
               parts: parts as any // Cast to match AddMessageRequest parts type
             })
@@ -186,7 +188,7 @@ export class Handler {
             // Publish success event
             this._rendererConnection.publishEvent('messageSaved', {
               type: EventType.Message,
-              payload: { sessionId, messageId, success: true }
+              payload: { sessionId: chatSessionId, messageId, success: true }
             })
           } catch (err) {
             const errorMessage = err instanceof Error ? err.message : 'Unknown error'
@@ -196,7 +198,7 @@ export class Handler {
             this._rendererConnection.publishEvent('messageSaveFailed', {
               type: EventType.Error,
               payload: {
-                sessionId,
+                sessionId: chatSessionId,
                 error: errorMessage,
                 parts
               }

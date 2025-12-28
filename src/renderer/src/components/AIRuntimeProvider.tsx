@@ -200,7 +200,15 @@ export function AIRuntimeProvider({
         )
 
         // Use Mastra streaming instead of v1
-        const stream = await streamMastraText(mastraSession, formattedMessages, abortSignal)
+        if (!sessionId) {
+          throw new Error('Chat session ID is required for message persistence')
+        }
+        const stream = await streamMastraText(
+          mastraSession,
+          sessionId,
+          formattedMessages,
+          abortSignal
+        )
 
         const contentParts: any[] = []
 

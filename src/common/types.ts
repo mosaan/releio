@@ -421,7 +421,11 @@ export interface RendererBackendAPI {
   // Mastra MVP APIs
   getMastraStatus: () => Promise<Result<MastraStatus>>
   startMastraSession: (resourceId?: string) => Promise<Result<MastraSessionInfo, string>>
-  streamMastraText: (sessionId: string, messages: AIMessage[]) => Promise<Result<string, string>>
+  streamMastraText: (
+    mastraSessionId: string,
+    chatSessionId: string,
+    messages: AIMessage[]
+  ) => Promise<Result<string, string>>
   abortMastraStream: (streamId: string) => Promise<Result<void, string>>
   // AI Settings v2 APIs
   getAISettingsV2: () => Promise<Result<AISettingsV2>>
