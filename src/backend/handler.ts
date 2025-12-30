@@ -71,6 +71,7 @@ import { TokenCounter } from './compression/TokenCounter'
 import { SummarizationService } from './compression/SummarizationService'
 import { ModelConfigService } from './compression/ModelConfigService'
 import { mastraChatService } from './mastra/MastraChatService'
+import { approvalManager } from './mastra/ApprovalManager'
 import {
   toolPermissionService,
   type CreateToolPermissionRuleInput,
@@ -740,10 +741,14 @@ export class Handler {
 
   async approveToolCall(runId: string, toolCallId?: string): Promise<Result<void, string>> {
     try {
-      // TODO: Phase 3.2 - Implement actual Mastra approval integration
-      // For now, this is a placeholder that will be connected to Mastra's HITL system
-      logger.info('[HITL] Tool call approved', { runId, toolCallId })
-      return ok(undefined)
+      const success = approvalManager.approve(runId)
+      if (success) {
+        logger.info('[HITL] Tool call approved', { runId, toolCallId })
+        return ok(undefined)
+      } else {
+        logger.warn('[HITL] Approval request not found or timed out', { runId })
+        return error('Approval request not found or timed out')
+      }
     } catch (err) {
       logger.error('[HITL] Failed to approve tool call', { runId, toolCallId, error: err })
       return error(err instanceof Error ? err.message : 'Failed to approve tool call')
@@ -756,10 +761,14 @@ export class Handler {
     reason?: string
   ): Promise<Result<void, string>> {
     try {
-      // TODO: Phase 3.2 - Implement actual Mastra decline integration
-      // For now, this is a placeholder that will be connected to Mastra's HITL system
-      logger.info('[HITL] Tool call declined', { runId, toolCallId, reason })
-      return ok(undefined)
+      const success = approvalManager.decline(runId, reason)
+      if (success) {
+        logger.info('[HITL] Tool call declined', { runId, toolCallId, reason })
+        return ok(undefined)
+      } else {
+        logger.warn('[HITL] Approval request not found or timed out', { runId })
+        return error('Approval request not found or timed out')
+      }
     } catch (err) {
       logger.error('[HITL] Failed to decline tool call', { runId, toolCallId, error: err })
       return error(err instanceof Error ? err.message : 'Failed to decline tool call')

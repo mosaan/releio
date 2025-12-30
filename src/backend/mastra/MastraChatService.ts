@@ -8,6 +8,9 @@ import { getAISettingsV2 as loadAISettingsV2 } from '../settings/ai-settings'
 import { mastraToolService, type MastraToolRecord } from './MastraToolService'
 import logger from '../logger'
 
+import { sessionContext } from './session-context'
+import { approvalManager } from './ApprovalManager'
+
 type SessionRecord = {
   sessionId: string
   threadId: string
@@ -19,6 +22,7 @@ type StreamRecord = {
   streamId: string
   sessionId: string
   abortController: AbortController
+  publishEvent: (channel: string, event: AppEvent) => void
 }
 
 export type MastraStatus =
@@ -51,6 +55,40 @@ export class MastraChatService {
   private sessions = new Map<string, SessionRecord>()
   private streams = new Map<string, StreamRecord>()
   private readonly defaultResourceId = 'default-resource'
+
+  constructor() {
+    this.setupApprovalListeners()
+  }
+
+  private setupApprovalListeners() {
+    approvalManager.on('approval-requested', (payload: any) => {
+      const { streamId, sessionId } = payload
+      const stream = this.streams.get(streamId)
+
+      if (stream) {
+        logger.info('[Mastra] Forwarding approval request to renderer', { streamId, sessionId })
+        stream.publishEvent('mastraToolApprovalRequired', {
+          type: EventType.Message, // Using Message type as generic carrier
+          payload: {
+            sessionId,
+            streamId,
+            runId: payload.runId,
+            toolCallId: payload.toolCallId,
+            toolName: payload.toolName,
+            input: payload.input,
+            serverId: 'unknown' // TODO: Pass serverId from tool service
+          }
+        })
+      } else {
+        logger.warn('[Mastra] Could not find stream for approval request', { streamId })
+      }
+    })
+
+    approvalManager.on('approval-resolved', () => {
+      // Tool execution will resume automatically via promise resolution
+      // No additional action needed here
+    })
+  }
 
   async getStatus(): Promise<MastraStatus> {
     try {
@@ -100,7 +138,12 @@ export class MastraChatService {
     const streamId = randomUUID()
     const abortController = new AbortController()
 
-    this.streams.set(streamId, { streamId, sessionId: session.sessionId, abortController })
+    this.streams.set(streamId, {
+      streamId,
+      sessionId: session.sessionId,
+      abortController,
+      publishEvent
+    })
     session.history = messages
 
     const uiMessages = toUIMessages(messages)
@@ -113,18 +156,20 @@ export class MastraChatService {
     })
 
     // Run streaming asynchronously so the handler can return immediately
-    this.runStreaming({
-      streamId,
-      session,
-      uiMessages,
-      messages,
-      abortController,
-      publishEvent,
-      onFinish
-    }).catch((err) => {
-      logger.error('[Mastra] Streaming task failed', {
+    sessionContext.run({ sessionId: session.sessionId, streamId }, async () => {
+      this.runStreaming({
         streamId,
-        error: err instanceof Error ? err.message : err
+        session,
+        uiMessages,
+        messages,
+        abortController,
+        publishEvent,
+        onFinish
+      }).catch((err) => {
+        logger.error('[Mastra] Streaming task failed', {
+          streamId,
+          error: err instanceof Error ? err.message : err
+        })
       })
     })
 

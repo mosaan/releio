@@ -8,9 +8,12 @@
 import { createTool } from '@mastra/core/tools'
 import type { ToolAction } from '@mastra/core/tools'
 import { z } from 'zod'
+import { randomUUID } from 'node:crypto'
 import { mcpManager } from '../mcp'
 import logger from '../logger'
 import { toolPermissionService } from './ToolPermissionService'
+import { sessionContext } from './session-context'
+import { approvalManager } from './ApprovalManager'
 
 // JSON Schema to Zod conversion is complex, so we use a passthrough schema
 // that accepts any input matching the original JSON schema structure
@@ -61,6 +64,40 @@ function convertMCPToolToMastra(
         serverId,
         inputKeys: Object.keys(context || {})
       })
+
+      // HITL Approval Check
+      if (requireApproval) {
+        const store = sessionContext.getStore()
+
+        if (store) {
+          logger.info('[MastraToolService] Tool requires approval, requesting...', {
+            toolName,
+            sessionId: store.sessionId
+          })
+
+          const approved = await approvalManager.requestApproval({
+            sessionId: store.sessionId,
+            streamId: store.streamId,
+            toolCallId: randomUUID(), // We don't have the exact LLM toolCallId here, so generate one
+            toolName,
+            input: context
+          })
+
+          if (!approved) {
+            logger.info('[MastraToolService] Tool execution declined by user', { toolName })
+            throw new Error('Tool execution declined by user')
+          }
+
+          logger.info('[MastraToolService] Tool execution approved', { toolName })
+        } else {
+          logger.warn(
+            '[MastraToolService] Tool requires approval but no session context found. Auto-allowing (fallback).',
+            {
+              toolName
+            }
+          )
+        }
+      }
 
       try {
         if (!mcpTool.execute) {
