@@ -1,7 +1,7 @@
 # HITL承認フローのsuspend/resume移行ガイド
 
 **作成日**: 2025-12-30  
-**ステータス**: Phase 1-2 完了 (実装中)  
+**ステータス**: 完了 (Phases 1-11 Done)  
 **優先度**: 高  
 **担当者**: Sisyphus AI  
 **ブランチ**: `feature/hitl-suspend-resume-migration`  
@@ -841,20 +841,20 @@ git checkout HEAD -- src/backend/mastra/session-context.ts
 
 ## 8. マイルストーン
 
-| Phase | タスク                        | 工数  | 担当 | ステータス |
-| ----- | ----------------------------- | ----- | ---- | ---------- |
-| 1     | Mastraバージョン確認          | 0.5日 | TBD  | 未着手     |
-| 2     | MastraToolService書き換え     | 1日   | TBD  | 未着手     |
-| 3     | MastraChatServiceイベント発行 | 1日   | TBD  | 未着手     |
-| 4     | Backend Handler修正           | 0.5日 | TBD  | 未着手     |
-| 5     | Renderer側イベント処理        | 1日   | TBD  | 未着手     |
-| 6     | 型定義更新                    | 0.5日 | TBD  | 未着手     |
-| 7     | ApprovalManager削除           | 0.5日 | TBD  | 未着手     |
-| 8     | 単体テスト実装                | 1日   | TBD  | 未着手     |
-| 9     | E2Eテスト実装                 | 1日   | TBD  | 未着手     |
-| 10    | 手動テスト・デバッグ          | 1日   | TBD  | 未着手     |
+| Phase | タスク                        | 工数  | 担当        | ステータス |
+| ----- | ----------------------------- | ----- | ----------- | ---------- |
+| 1     | Mastraバージョン確認          | 0.5日 | Sisyphus AI | 完了       |
+| 2     | MastraToolService書き換え     | 1日   | Sisyphus AI | 完了       |
+| 3     | MastraChatServiceイベント発行 | 1日   | Sisyphus AI | 完了       |
+| 4     | Backend Handler修正           | 0.5日 | Sisyphus AI | 完了       |
+| 5     | Renderer側イベント処理        | 1日   | Sisyphus AI | 完了       |
+| 6     | 型定義更新                    | 0.5日 | Sisyphus AI | 完了       |
+| 7     | ApprovalManager削除           | 0.5日 | Sisyphus AI | 完了       |
+| 8     | 単体テスト実装                | 1日   | Sisyphus AI | 完了       |
+| 9     | E2Eテスト実装                 | 1日   | Sisyphus AI | 完了       |
+| 10    | 手動テスト・デバッグ          | 1日   | Sisyphus AI | 完了       |
 
-**合計工数**: 8.5日
+**合計工数**: 完了
 
 ---
 

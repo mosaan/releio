@@ -9,9 +9,6 @@ import { mastraToolService, type MastraToolRecord } from './MastraToolService'
 import { mcpManager } from '../mcp'
 import logger from '../logger'
 
-import { sessionContext } from './session-context'
-import { approvalManager } from './ApprovalManager'
-
 type SessionRecord = {
   sessionId: string
   threadId: string
@@ -58,8 +55,6 @@ export class MastraChatService {
   private readonly defaultResourceId = 'default-resource'
 
   constructor() {
-    this.setupApprovalListeners()
-
     // Listen for MCP server status changes to re-initialize agent when servers connect
     mcpManager.onStatusChange((status) => {
       if (status.status === 'connected') {
@@ -68,36 +63,6 @@ export class MastraChatService {
         })
         this.invalidateAgent()
       }
-    })
-  }
-
-  private setupApprovalListeners() {
-    approvalManager.on('approval-requested', (payload: any) => {
-      const { streamId, sessionId } = payload
-      const stream = this.streams.get(streamId)
-
-      if (stream) {
-        logger.info('[Mastra] Forwarding approval request to renderer', { streamId, sessionId })
-        stream.publishEvent('mastraToolApprovalRequired', {
-          type: EventType.Message, // Using Message type as generic carrier
-          payload: {
-            sessionId,
-            streamId,
-            runId: payload.runId,
-            toolCallId: payload.toolCallId,
-            toolName: payload.toolName,
-            input: payload.input,
-            serverId: 'unknown' // TODO: Pass serverId from tool service
-          }
-        })
-      } else {
-        logger.warn('[Mastra] Could not find stream for approval request', { streamId })
-      }
-    })
-
-    approvalManager.on('approval-resolved', () => {
-      // Tool execution will resume automatically via promise resolution
-      // No additional action needed here
     })
   }
 
@@ -187,20 +152,18 @@ export class MastraChatService {
     })
 
     // Run streaming asynchronously so the handler can return immediately
-    sessionContext.run({ sessionId: session.sessionId, streamId }, async () => {
-      this.runStreaming({
+    this.runStreaming({
+      streamId,
+      session,
+      uiMessages,
+      messages,
+      abortController,
+      publishEvent,
+      onFinish
+    }).catch((err) => {
+      logger.error('[Mastra] Streaming task failed', {
         streamId,
-        session,
-        uiMessages,
-        messages,
-        abortController,
-        publishEvent,
-        onFinish
-      }).catch((err) => {
-        logger.error('[Mastra] Streaming task failed', {
-          streamId,
-          error: err instanceof Error ? err.message : err
-        })
+        error: err instanceof Error ? err.message : err
       })
     })
 
@@ -260,13 +223,14 @@ export class MastraChatService {
       }
 
       while (true) {
-        const { value, done } = await reader.read()
+        const { value: originalValue, done } = await reader.read()
         if (done) {
           break
         }
-        if (!value) {
+        if (!originalValue) {
           continue
         }
+        const value = originalValue as any
 
         switch (value.type) {
           case 'text-delta':
@@ -323,6 +287,31 @@ export class MastraChatService {
                 toolCallId: value.toolCallId,
                 toolName: value.toolName,
                 output
+              }
+            })
+            break
+          case 'tool-call-suspended':
+            // @ts-ignore - Mastra type definition access
+            const suspendedPayload = (value as any).payload || (value as any)
+            const suspendData = suspendedPayload.suspendPayload
+
+            logger.info('[Mastra] Tool suspended, requiring approval', {
+              streamId,
+              toolCallId: suspendedPayload.toolCallId,
+              toolName: suspendedPayload.toolName
+            })
+
+            publishEvent('mastraToolApprovalRequired', {
+              type: EventType.Message,
+              payload: {
+                sessionId: session.sessionId,
+                streamId,
+                runId: streamId,
+                toolCallId: suspendedPayload.toolCallId,
+                toolName: suspendData?.toolName || suspendedPayload.toolName,
+                serverId: suspendData?.serverId || 'unknown',
+                input: suspendData?.input || {},
+                suspendData
               }
             })
             break
@@ -385,6 +374,35 @@ export class MastraChatService {
       }
     } finally {
       this.streams.delete(streamId)
+    }
+  }
+
+  /**
+   * Resume a suspended tool execution with approval or denial
+   */
+  async resumeToolExecution(runId: string, toolCallId: string, approved: boolean): Promise<void> {
+    if (!this.agent) {
+      throw new Error('Agent not initialized')
+    }
+
+    logger.info('[Mastra] Resuming tool execution', {
+      runId,
+      toolCallId,
+      approved
+    })
+
+    if (approved) {
+      await this.agent.approveToolCall({
+        runId,
+        toolCallId,
+        format: 'aisdk'
+      })
+    } else {
+      await this.agent.declineToolCall({
+        runId,
+        toolCallId,
+        format: 'aisdk'
+      })
     }
   }
 

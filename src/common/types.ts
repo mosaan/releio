@@ -34,6 +34,7 @@ export interface ToolApprovalRequestPayload {
   toolName: string
   serverId: string
   input: unknown
+  suspendData?: unknown
 }
 
 /**
