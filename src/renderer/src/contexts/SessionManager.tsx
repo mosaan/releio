@@ -14,7 +14,6 @@ interface SessionManagerContextValue {
   currentSessionId: string | null
   currentSession: ChatSessionWithMessages | null
   isLoading: boolean
-  isRefreshing: boolean // NEW: セッションリフレッシュ中フラグ
 
   // Session list
   sessions: ChatSessionRow[]
@@ -25,7 +24,7 @@ interface SessionManagerContextValue {
   updateSession: (sessionId: string, updates: SessionUpdates) => Promise<void>
   deleteSession: (sessionId: string) => Promise<void>
   refreshSessions: () => Promise<void>
-  refreshCurrentSession: (showLoading?: boolean) => Promise<void>
+  refreshCurrentSession: () => Promise<void>
 
   // Model selection for current session
   modelSelection: AIModelSelection | null
@@ -50,7 +49,6 @@ export function SessionManagerProvider({
   const [currentSession, setCurrentSession] = useState<ChatSessionWithMessages | null>(null)
   const [sessions, setSessions] = useState<ChatSessionRow[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [isRefreshing, setIsRefreshing] = useState(false) // NEW: リフレッシュ状態管理
   const [modelSelection, setModelSelection] = useState<AIModelSelection | null>(null)
 
   // Mastra session state
@@ -132,32 +130,11 @@ export function SessionManagerProvider({
   }, [])
 
   // Refresh current session details (messages, compression summaries, etc.)
-  const refreshCurrentSession = useCallback(
-    async (showLoading: boolean = true) => {
-      if (!currentSessionId) return
-
-      // リフレッシュ中フラグを立てて、UIの競合状態を防止
-      // showLoadingがfalseの場合はバックグラウンド更新として扱う（ローディング表示なし）
-      if (showLoading) {
-        setIsRefreshing(true)
-      }
-
-      try {
-        await loadCurrentSession(currentSessionId)
-        logger.info('[SessionManager] Session refreshed successfully', {
-          currentSessionId,
-          showLoading
-        })
-      } catch (error) {
-        logger.error('[SessionManager] Failed to refresh session', { currentSessionId, error })
-      } finally {
-        if (showLoading) {
-          setIsRefreshing(false)
-        }
-      }
-    },
-    [currentSessionId, loadCurrentSession]
-  )
+  const refreshCurrentSession = useCallback(async () => {
+    if (currentSessionId) {
+      await loadCurrentSession(currentSessionId)
+    }
+  }, [currentSessionId, loadCurrentSession])
 
   // Initialize: load last session ID and sessions
   useEffect(() => {
@@ -256,38 +233,21 @@ export function SessionManagerProvider({
   // Switch to different session
   const switchSession = useCallback(
     async (sessionId: string) => {
-      // Store previous session ID for error recovery
-      const previousSessionId = currentSessionId
-
       try {
-        // Clear current session state immediately to prevent stale data
-        setCurrentSession(null)
-        setIsLoading(true)
-
-        // Update session ID
         setCurrentSessionId(sessionId)
 
-        // Save last session ID to backend
+        // Save last session ID
         await window.backend.setLastSessionId(sessionId)
 
-        // Load new session details
+        // Load session details
         await loadCurrentSession(sessionId)
 
         logger.info(`Switched to session: ${sessionId}`)
       } catch (error) {
         logger.error('Error switching session:', error)
-
-        // Error recovery: revert to previous session
-        if (previousSessionId) {
-          logger.info(`Reverting to previous session: ${previousSessionId}`)
-          setCurrentSessionId(previousSessionId)
-          await loadCurrentSession(previousSessionId)
-        }
-      } finally {
-        setIsLoading(false)
       }
     },
-    [currentSessionId, loadCurrentSession]
+    [loadCurrentSession]
   )
 
   // Update session metadata
@@ -351,7 +311,6 @@ export function SessionManagerProvider({
     currentSessionId,
     currentSession,
     isLoading,
-    isRefreshing, // NEW: リフレッシュ状態を公開
     sessions,
     createSession,
     switchSession,

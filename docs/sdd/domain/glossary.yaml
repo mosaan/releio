@@ -1,0 +1,615 @@
+# ドメイン用語集 (Domain Glossary)
+# Releio - AI Chat Application
+
+version: 1.0.0
+last_updated: 2025-12-30
+description: |
+  Releioアプリケーションのコアドメイン用語を定義します。
+  各用語は型分類、属性、不変条件、関連用語を含みます。
+
+glossary:
+  # === Entities (エンティティ) ===
+
+  - term: 'ChatSession'
+    japanese: 'チャットセッション'
+    definition: 'ユーザーとAI間の会話スレッドを表すエンティティ。会話履歴、メタデータ、圧縮状態を管理する。'
+    type: 'Entity'
+    attributes:
+      - 'id: string (UUID) - 一意識別子'
+      - 'title: string - セッションタイトル'
+      - 'createdAt: integer - 作成日時 (Unix timestamp)'
+      - 'updatedAt: integer - 更新日時 (Unix timestamp)'
+      - 'lastMessageAt: integer | null - 最終メッセージ日時'
+      - 'providerConfigId: string | null - 使用中のAIプロバイダー設定ID'
+      - 'modelId: string | null - 使用中のAIモデルID'
+      - 'messageCount: integer - メッセージ数 (デフォルト: 0)'
+      - 'dataSchemaVersion: integer - データスキーマバージョン (デフォルト: 1)'
+      - 'archivedAt: integer | null - アーカイブ日時'
+      - 'pinnedAt: integer | null - ピン留め日時'
+      - 'summary: string | null - セッション要約'
+      - 'summaryUpdatedAt: integer | null - 要約更新日時'
+      - 'color: string | null - UIカラーコード'
+      - 'metadata: string | null - 追加メタデータ (JSON)'
+    invariants:
+      - 'messageCount >= 0 (メッセージ数は非負)'
+      - 'dataSchemaVersion >= 1 (スキーマバージョンは1以上)'
+      - 'lastMessageAt >= createdAt (最終メッセージは作成日時以降)'
+      - 'archivedAt implies not active (アーカイブ済みは非アクティブ)'
+    related_terms:
+      - 'ChatMessage'
+      - 'SessionSnapshot'
+      - 'AIProviderConfiguration'
+      - 'CompressionSettings'
+    evolution:
+      - date: '2025-12-30'
+        change: '初版定義 - コアエンティティとして抽出'
+
+  - term: 'ChatMessage'
+    japanese: 'チャットメッセージ'
+    definition: '会話内の1ターン(発言)を表すエンティティ。ユーザー、AI、システム、ツールのいずれかの役割を持つ。'
+    type: 'Entity'
+    attributes:
+      - 'id: string (UUID) - 一意識別子'
+      - 'sessionId: string (FK) - 所属セッションID'
+      - "role: 'user' | 'assistant' | 'system' | 'tool' - メッセージ役割"
+      - "state: 'pending' | 'streaming' | 'completed' | 'error' - 処理状態"
+      - 'sequence: integer - セッション内の順序番号'
+      - 'createdAt: integer - 作成日時 (Unix timestamp)'
+      - 'completedAt: integer | null - 完了日時'
+      - 'inputTokens: integer | null - 入力トークン数'
+      - 'outputTokens: integer | null - 出力トークン数'
+      - 'error: string | null - エラー情報 (JSON)'
+      - 'metadata: string | null - 追加メタデータ (JSON)'
+      - 'parentMessageId: string | null (FK) - 親メッセージID (会話分岐用)'
+      - 'deletedAt: integer | null - 論理削除日時'
+    invariants:
+      - 'sequence >= 0 (順序番号は非負)'
+      - "state = 'completed' implies completedAt != null (完了状態は完了日時必須)"
+      - "role = 'assistant' implies outputTokens可能 (AIメッセージは出力トークン記録可能)"
+      - 'deletedAt implies logically deleted (削除済みは論理削除状態)'
+    related_terms:
+      - 'ChatSession'
+      - 'MessagePart'
+      - 'ToolInvocation'
+    database_indexes:
+      - 'idx_chat_messages_session_sequence (sessionId, sequence)'
+      - 'idx_chat_messages_session_created (sessionId, createdAt)'
+    evolution:
+      - date: '2025-12-30'
+        change: '初版定義 - 会話ターン管理'
+
+  - term: 'MessagePart'
+    japanese: 'メッセージパート'
+    definition: 'メッセージ内のアトミックなコンテンツブロック。テキスト、ツール呼び出し、ツール結果、添付ファイル、メタデータのいずれか。'
+    type: 'Value Object'
+    attributes:
+      - 'id: string (UUID) - 一意識別子'
+      - 'messageId: string (FK) - 所属メッセージID'
+      - 'sessionId: string (FK) - 所属セッションID'
+      - "kind: 'text' | 'tool_invocation' | 'tool_result' | 'attachment' | 'metadata' - パート種別"
+      - 'sequence: integer - メッセージ内の順序番号'
+      - 'contentText: string | null - テキストコンテンツ'
+      - 'contentJson: string | null - JSONコンテンツ'
+      - 'mimeType: string | null - MIMEタイプ (添付ファイル用)'
+      - 'sizeBytes: integer | null - サイズ (バイト)'
+      - 'toolCallId: string | null - ツール呼び出しID (tool_invocation/tool_result用)'
+      - 'toolName: string | null - ツール名'
+      - "status: 'pending' | 'running' | 'success' | 'error' | 'canceled' | null - 実行状態"
+      - 'errorCode: string | null - エラーコード'
+      - 'errorMessage: string | null - エラーメッセージ'
+      - 'relatedPartId: string | null (FK) - 関連パートID (tool_result -> tool_invocation)'
+      - 'metadata: string | null - 追加メタデータ (JSON)'
+      - 'createdAt: integer - 作成日時'
+      - 'updatedAt: integer - 更新日時'
+    invariants:
+      - 'sequence >= 0 (順序番号は非負)'
+      - "kind = 'text' implies contentText != null (テキストパートはテキスト必須)"
+      - "kind = 'tool_invocation' implies toolCallId != null and toolName != null (ツール呼び出しはID・名前必須)"
+      - "kind = 'tool_result' implies relatedPartId references tool_invocation (ツール結果は呼び出しパート参照)"
+      - 'toolCallId is unique if not null (ツール呼び出しIDはグローバル一意)'
+    related_terms:
+      - 'ChatMessage'
+      - 'ToolInvocation'
+      - 'MCPTool'
+    database_indexes:
+      - 'idx_message_parts_message_sequence (messageId, sequence)'
+      - 'idx_message_parts_session_kind (sessionId, kind)'
+      - 'unique idx_message_parts_tool_call_id (toolCallId)'
+    evolution:
+      - date: '2025-12-30'
+        change: '初版定義 - メッセージのアトミック構成単位'
+
+  - term: 'ToolInvocation'
+    japanese: 'ツール実行記録'
+    definition: 'MCP/AIツールの実行ライフサイクルを追跡するエンティティ。呼び出し・実行・結果を記録。'
+    type: 'Entity'
+    attributes:
+      - 'id: string (UUID) - 一意識別子'
+      - 'sessionId: string (FK) - 所属セッションID'
+      - 'messageId: string (FK) - 所属メッセージID'
+      - 'invocationPartId: string (FK) - 呼び出しパートID (MessagePart)'
+      - 'resultPartId: string | null (FK) - 結果パートID (MessagePart)'
+      - 'toolCallId: string (unique) - ツール呼び出しID (グローバル一意)'
+      - 'toolName: string - ツール名'
+      - 'inputJson: string | null - 入力引数 (JSON)'
+      - 'outputJson: string | null - 出力結果 (JSON)'
+      - "status: 'pending' | 'running' | 'success' | 'error' | 'canceled' - 実行状態"
+      - 'errorCode: string | null - エラーコード'
+      - 'errorMessage: string | null - エラーメッセージ'
+      - 'latencyMs: integer | null - 実行時間 (ミリ秒)'
+      - 'startedAt: integer | null - 開始日時'
+      - 'completedAt: integer | null - 完了日時'
+      - 'createdAt: integer - 作成日時'
+      - 'updatedAt: integer - 更新日時'
+    invariants:
+      - 'toolCallId is globally unique (ツール呼び出しIDはグローバル一意)'
+      - "status = 'success' implies completedAt != null and outputJson != null (成功は完了日時・出力必須)"
+      - "status = 'error' implies errorMessage != null (エラーはメッセージ必須)"
+      - 'latencyMs = completedAt - startedAt if both present (レイテンシは開始〜完了時間)'
+    related_terms:
+      - 'MessagePart'
+      - 'MCPTool'
+      - 'ToolPermissionRule'
+    database_indexes:
+      - 'idx_tool_invocations_tool_name (toolName)'
+      - 'idx_tool_invocations_status_completed (status, completedAt)'
+      - 'idx_tool_invocations_session_created (sessionId, createdAt)'
+    evolution:
+      - date: '2025-12-30'
+        change: '初版定義 - ツール実行ライフサイクル管理'
+
+  - term: 'SessionSnapshot'
+    japanese: 'セッションスナップショット'
+    definition: '会話圧縮時の要約スナップショットを保存するエンティティ。ローリングサマリーの実装。'
+    type: 'Entity'
+    attributes:
+      - 'id: string (UUID) - 一意識別子'
+      - 'sessionId: string (FK) - 所属セッションID'
+      - "kind: 'title' | 'summary' | 'memory' - スナップショット種別"
+      - 'contentJson: string - スナップショット内容 (JSON、要約テキストを含む)'
+      - 'messageCutoffId: string (FK) - カットオフメッセージID (要約範囲の終端)'
+      - 'tokenCount: integer - トークン数 (要約自体のトークン数)'
+      - 'createdAt: integer - 作成日時'
+      - 'updatedAt: integer - 更新日時'
+    invariants:
+      - 'tokenCount > 0 (トークン数は正数)'
+      - "kind = 'summary' implies contentJson contains summary text (サマリー種別は要約テキスト含む)"
+      - 'messageCutoffId references valid ChatMessage (カットオフIDは有効なメッセージ参照)'
+    related_terms:
+      - 'ChatSession'
+      - 'CompressionService'
+      - 'CompressionSettings'
+    database_indexes:
+      - 'idx_session_snapshots_kind (sessionId, kind)'
+    evolution:
+      - date: '2025-12-30'
+        change: '初版定義 - 会話圧縮のスナップショット管理'
+
+  - term: 'MCPServer'
+    japanese: 'MCPサーバー'
+    definition: 'Model Context Protocol (MCP) サーバーの設定と実行状態を管理するエンティティ。外部ツール統合の基盤。'
+    type: 'Entity'
+    attributes:
+      - 'id: string (UUID) - 一意識別子'
+      - 'name: string - サーバー名'
+      - 'description: string | null - 説明'
+      - "command: string - 実行コマンド (例: 'npx', 'python')"
+      - 'args: string[] - コマンド引数 (JSON配列)'
+      - 'env: Record<string, string> | null - 環境変数 (JSON)'
+      - 'enabled: boolean - 有効/無効 (デフォルト: true)'
+      - 'includeResources: boolean - リソースをツールとして含めるか (デフォルト: false)'
+      - 'createdAt: Date - 作成日時'
+      - 'updatedAt: Date - 更新日時'
+    invariants:
+      - 'name is not empty (サーバー名は非空)'
+      - 'command is not empty (コマンドは非空)'
+      - 'enabled = true implies server starts on app launch (有効時は起動時に自動起動)'
+    related_terms:
+      - 'MCPTool'
+      - 'MCPResource'
+      - 'ToolPermissionRule'
+    evolution:
+      - date: '2025-12-30'
+        change: '初版定義 - MCP統合の設定エンティティ'
+
+  - term: 'ModelConfig'
+    japanese: 'モデル設定'
+    definition: 'AIモデルのトークン制限と圧縮設定を保存するエンティティ。API取得またはユーザー定義。'
+    type: 'Entity'
+    attributes:
+      - "id: string - モデル識別子 (形式: 'provider:model', 例: 'openai:gpt-4o')"
+      - "provider: string - プロバイダー名 ('openai', 'anthropic', 'google', 'azure')"
+      - 'model: string - モデル名'
+      - 'maxInputTokens: integer - 最大入力トークン数'
+      - 'maxOutputTokens: integer - 最大出力トークン数'
+      - 'defaultCompressionThreshold: real - デフォルト圧縮閾値 (0.0-1.0, デフォルト: 0.95)'
+      - 'recommendedRetentionTokens: integer - 推奨保持トークン数 (デフォルト: 1000)'
+      - "source: 'api' | 'manual' | 'default' - 設定ソース"
+      - 'lastUpdated: Date - 最終更新日時'
+      - 'createdAt: Date - 作成日時'
+    invariants:
+      - 'maxInputTokens > 0 (最大入力トークンは正数)'
+      - 'maxOutputTokens > 0 (最大出力トークンは正数)'
+      - '0.0 < defaultCompressionThreshold <= 1.0 (圧縮閾値は0超1以下)'
+      - 'recommendedRetentionTokens > 0 (推奨保持トークンは正数)'
+      - "id = '{provider}:{model}' (IDはプロバイダーとモデルの結合)"
+    related_terms:
+      - 'AIProviderConfiguration'
+      - 'CompressionSettings'
+      - 'TokenUsageInfo'
+    database_indexes:
+      - 'idx_model_configs_provider (provider)'
+    evolution:
+      - date: '2025-12-30'
+        change: '初版定義 - モデル固有のトークン・圧縮設定'
+
+  - term: 'ToolPermissionRule'
+    japanese: 'ツール実行許可ルール'
+    definition: 'MCP/AIツールの実行許可を制御するHITL (Human-in-the-Loop) ルールエンティティ。'
+    type: 'Entity'
+    attributes:
+      - 'id: string (UUID) - 一意識別子'
+      - 'serverId: string | null - 対象MCPサーバーID (null = 全サーバー)'
+      - 'toolName: string | null - 対象ツール名 (null = パターンまたは全ツール)'
+      - "toolPattern: string | null - ワイルドカードパターン (例: 'delete_*', null = toolNameまたは全ツール)"
+      - 'autoApprove: boolean - 自動承認フラグ (true=自動実行, false=承認必須)'
+      - 'priority: integer - 優先度 (高い値が優先評価, デフォルト: 0)'
+      - 'createdAt: string - 作成日時 (ISO 8601)'
+      - 'updatedAt: string - 更新日時 (ISO 8601)'
+    invariants:
+      - 'exactly one of (toolName, toolPattern, both null) must be set (ツール名・パターン・全ツールのいずれか1つ)'
+      - 'priority determines evaluation order (優先度が評価順序を決定)'
+      - 'higher priority rules override lower priority (高優先度ルールが優先)'
+    related_terms:
+      - 'MCPServer'
+      - 'MCPTool'
+      - 'ToolApprovalRequest'
+    database_indexes:
+      - 'idx_tool_permission_rules_server (serverId)'
+      - 'idx_tool_permission_rules_priority (priority)'
+    evolution:
+      - date: '2025-12-30'
+        change: '初版定義 - HITL許可制御ルール'
+
+  - term: 'AIProviderConfiguration'
+    japanese: 'AIプロバイダー設定'
+    definition: "特定のAIプロバイダーインスタンス設定 (例: 'OpenAI Official', 'LocalLM Server', 'Azure Production')。接続情報とモデルリストを管理。"
+    type: 'Entity'
+    attributes:
+      - 'id: string (UUID) - 一意識別子'
+      - "name: string - ユーザー設定名 (例: 'OpenAI Official', 'LocalLM')"
+      - "type: AIProvider - プロバイダー種別 ('openai' | 'anthropic' | 'google' | 'azure')"
+      - 'config: AIProviderConfig | AzureProviderConfig - 接続設定 (APIキー、baseURL等)'
+      - 'models: AIModelDefinition[] - 利用可能モデルリスト'
+      - 'modelRefreshEnabled: boolean - モデルリスト自動更新フラグ'
+      - 'modelLastRefreshed: string | null - 最終API取得日時 (ISO 8601)'
+      - 'enabled: boolean - 有効/無効フラグ'
+      - 'createdAt: string - 作成日時 (ISO 8601)'
+      - 'updatedAt: string - 更新日時 (ISO 8601)'
+    invariants:
+      - 'name is not empty (設定名は非空)'
+      - 'config.apiKey is not empty if enabled (有効時はAPIキー必須)'
+      - 'models contains at least one model if enabled (有効時はモデル1つ以上)'
+      - 'modelRefreshEnabled = true implies periodic API fetch (自動更新有効時は定期API取得)'
+    related_terms:
+      - 'AIModelDefinition'
+      - 'AIModelSelection'
+      - 'ModelConfig'
+    evolution:
+      - date: '2025-12-30'
+        change: '初版定義 - v2設定システムのプロバイダー設定'
+
+  # === Value Objects (値オブジェクト) ===
+
+  - term: 'AIModelDefinition'
+    japanese: 'AIモデル定義'
+    definition: 'プロバイダー設定内の特定モデルを表す値オブジェクト。API取得またはカスタム追加。'
+    type: 'Value Object'
+    attributes:
+      - "id: string - モデルID (APIで使用される識別子, 例: 'gpt-4o', 'gemini-2.5-flash')"
+      - 'displayName: string | null - カスタム表示名 (オプション)'
+      - "source: 'api' | 'custom' - モデル追加元"
+      - 'isAvailable: boolean | null - 利用可能性 (API取得モデルの場合)'
+      - 'lastChecked: string | null - 最終確認日時 (ISO 8601)'
+      - 'addedAt: string - 追加日時 (ISO 8601)'
+      - 'description: string | null - 説明 (オプション)'
+    invariants:
+      - 'id is not empty (モデルIDは非空)'
+      - "source = 'api' implies isAvailable可能 (API取得モデルは利用可能性追跡)"
+      - 'immutable after creation (作成後は不変 - Value Object特性)'
+    related_terms:
+      - 'AIProviderConfiguration'
+      - 'AIModelSelection'
+    evolution:
+      - date: '2025-12-30'
+        change: '初版定義 - プロバイダー設定内のモデル表現'
+
+  - term: 'AIModelSelection'
+    japanese: 'AIモデル選択'
+    definition: '実行時のモデル選択を表す値オブジェクト。プロバイダー設定IDとモデルIDの組み合わせ。'
+    type: 'Value Object'
+    attributes:
+      - 'providerConfigId: string - 使用するプロバイダー設定ID'
+      - 'modelId: string - そのプロバイダー設定内のモデルID'
+    invariants:
+      - 'providerConfigId references valid AIProviderConfiguration (有効なプロバイダー設定参照)'
+      - "modelId exists in referenced provider's models list (モデルIDはプロバイダーのモデルリスト内に存在)"
+      - 'immutable (不変 - Value Object特性)'
+    related_terms:
+      - 'AIProviderConfiguration'
+      - 'AIModelDefinition'
+      - 'ChatSession'
+    evolution:
+      - date: '2025-12-30'
+        change: '初版定義 - 実行時モデル選択の値オブジェクト'
+
+  - term: 'ProxySettings'
+    japanese: 'プロキシ設定'
+    definition: 'ネットワークプロキシ設定を表す値オブジェクト。エンタープライズ環境での接続を可能にする。'
+    type: 'Value Object'
+    attributes:
+      - "mode: ProxyMode - プロキシモード ('system' | 'custom' | 'none')"
+      - 'httpProxy: string | null - HTTPプロキシURL (custom時)'
+      - 'httpsProxy: string | null - HTTPSプロキシURL (custom時)'
+      - 'noProxy: string[] | null - プロキシ除外パターンリスト'
+      - 'username: string | null - プロキシ認証ユーザー名'
+      - 'password: string | null - プロキシ認証パスワード (暗号化保存)'
+    invariants:
+      - "mode = 'custom' implies (httpProxy != null or httpsProxy != null) (カスタムモードはプロキシURL必須)"
+      - "mode = 'system' implies use OS proxy settings (システムモードはOS設定使用)"
+      - 'username != null implies password != null (認証ユーザー名設定時はパスワード必須)'
+      - 'immutable (不変 - Value Object特性)'
+    related_terms:
+      - 'CertificateSettings'
+      - 'ConnectionTestResult'
+    evolution:
+      - date: '2025-12-30'
+        change: '初版定義 - エンタープライズ環境対応プロキシ設定'
+
+  - term: 'CertificateSettings'
+    japanese: '証明書設定'
+    definition: 'SSL/TLS証明書設定を表す値オブジェクト。カスタムCA証明書対応。'
+    type: 'Value Object'
+    attributes:
+      - "mode: CertificateMode - 証明書モード ('system' | 'custom' | 'none')"
+      - 'customCertificates: string[] | null - カスタムCA証明書パスリスト'
+      - 'rejectUnauthorized: boolean | null - 未承認証明書拒否フラグ (デフォルト: true)'
+    invariants:
+      - "mode = 'custom' implies customCertificates != null and not empty (カスタムモードは証明書パス必須)"
+      - "mode = 'none' implies rejectUnauthorized = false (証明書検証なしは未承認許可)"
+      - 'immutable (不変 - Value Object特性)'
+    related_terms:
+      - 'ProxySettings'
+      - 'ConnectionTestResult'
+    evolution:
+      - date: '2025-12-30'
+        change: '初版定義 - エンタープライズ環境対応証明書設定'
+
+  - term: 'CompressionSettings'
+    japanese: '圧縮設定'
+    definition: '会話圧縮の設定を表す値オブジェクト。閾値、保持トークン数、自動圧縮フラグを含む。'
+    type: 'Value Object'
+    attributes:
+      - 'threshold: number - 圧縮閾値 (0.70-1.00, 例: 0.95 = 95%使用時に圧縮)'
+      - 'retentionTokens: number - 圧縮後の保持トークン数 (例: 1000)'
+      - 'autoCompress: boolean - 閾値超過時の自動圧縮フラグ'
+    invariants:
+      - '0.70 <= threshold <= 1.00 (閾値は70%〜100%の範囲)'
+      - 'retentionTokens > 0 (保持トークン数は正数)'
+      - 'retentionTokens < maxInputTokens (保持数は最大入力数未満)'
+      - 'immutable (不変 - Value Object特性)'
+    related_terms:
+      - 'ModelConfig'
+      - 'TokenUsageInfo'
+      - 'CompressionService'
+    evolution:
+      - date: '2025-12-30'
+        change: '初版定義 - 会話圧縮のユーザー設定'
+
+  - term: 'TokenUsageInfo'
+    japanese: 'トークン使用量情報'
+    definition: '現在のトークン使用量と圧縮必要性を示す値オブジェクト。リアルタイム計測結果。'
+    type: 'Value Object'
+    attributes:
+      - 'currentTokens: number - 現在の総トークン数 (入力+出力)'
+      - 'maxTokens: number - モデルの最大トークン数'
+      - 'inputTokens: number - 入力トークン数 (ユーザーメッセージ+システム+要約)'
+      - 'outputTokens: number - 出力トークン数 (AIメッセージ)'
+      - 'estimatedResponseTokens: number - 次回AI応答の推定トークン数'
+      - 'utilizationPercentage: number - 使用率 (currentTokens / maxTokens * 100)'
+      - 'thresholdPercentage: number - 圧縮閾値パーセンテージ'
+      - 'needsCompression: boolean - 圧縮必要フラグ (utilizationPercentage >= thresholdPercentage)'
+      - 'breakdown: object | null - トークン内訳 (system, summary, regular, tool, currentInput)'
+    invariants:
+      - 'currentTokens = inputTokens + outputTokens (現在トークン = 入力 + 出力)'
+      - 'utilizationPercentage = (currentTokens / maxTokens) * 100 (使用率計算式)'
+      - 'needsCompression = (utilizationPercentage >= thresholdPercentage) (圧縮必要判定)'
+      - 'estimatedResponseTokens > 0 (推定応答トークンは正数)'
+      - 'immutable (不変 - Value Object特性)'
+    related_terms:
+      - 'CompressionSettings'
+      - 'CompressionPreview'
+      - 'ModelConfig'
+    evolution:
+      - date: '2025-12-30'
+        change: '初版定義 - リアルタイムトークン使用量追跡'
+
+  - term: 'ToolApprovalRequest'
+    japanese: 'ツール承認リクエスト'
+    definition: 'HITL (Human-in-the-Loop) ツール実行の承認リクエストを表すイベント値オブジェクト。'
+    type: 'Value Object / Event'
+    attributes:
+      - 'sessionId: string - セッションID'
+      - 'streamId: string - ストリームID'
+      - 'runId: string - 実行ID'
+      - 'toolCallId: string - ツール呼び出しID'
+      - 'toolName: string - ツール名'
+      - 'serverId: string - MCPサーバーID'
+      - 'input: unknown - ツール入力引数'
+    invariants:
+      - 'toolCallId is unique per request (呼び出しIDはリクエストごとに一意)'
+      - 'requires user decision (approve/decline) (ユーザー決定(承認/拒否)が必要)'
+      - 'immutable (不変 - Value Object特性)'
+    related_terms:
+      - 'ToolPermissionRule'
+      - 'ToolInvocation'
+      - 'MCPTool'
+    evolution:
+      - date: '2025-12-30'
+        change: '初版定義 - HITLツール承認イベント'
+
+  - term: 'CompressionSummary'
+    japanese: '圧縮サマリー'
+    definition: '圧縮後の要約スナップショットを表す値オブジェクト。SessionSnapshotのAPI表現。'
+    type: 'Value Object'
+    attributes:
+      - 'id: string - サマリーID'
+      - 'content: string - 要約テキスト'
+      - 'messageCutoffId: string - カットオフメッセージID (要約範囲の終端)'
+      - 'tokenCount: number - 要約自体のトークン数'
+      - 'createdAt: number - 作成日時 (Unix timestamp)'
+    invariants:
+      - 'tokenCount > 0 (トークン数は正数)'
+      - 'content is not empty (要約テキストは非空)'
+      - 'immutable (不変 - Value Object特性)'
+    related_terms:
+      - 'SessionSnapshot'
+      - 'CompressionService'
+      - 'CompressionSettings'
+    evolution:
+      - date: '2025-12-30'
+        change: '初版定義 - 圧縮結果のAPI表現'
+
+  # === Services (サービス) ===
+
+  - term: 'Connection'
+    japanese: 'IPC通信サービス'
+    definition: 'MessagePort基盤のプロセス間通信サービス。Main/Backend/Renderer間の型安全な通信を提供。'
+    type: 'Service'
+    responsibilities:
+      - 'MessagePortベースのIPC抽象化 (従来のElectron IPCを使用しない)'
+      - '型安全なRPC (invoke/result) パターン実装'
+      - 'イベント送受信 (event) パターン実装'
+      - 'タイムアウト管理'
+      - 'エラーハンドリング (Result<A, E> 型)'
+    technical_details:
+      - '実装: src/common/connection.ts'
+      - '3プロセスモデル対応: Main Process / Backend (Utility Process) / Renderer Process'
+      - 'InvokeMessage, ResultMessage, EventMessage の3種類のメッセージ型'
+      - 'Promise-based API with Result type (Ok<A> | Error<E>)'
+    invariants:
+      - 'all IPC messages are type-safe (全IPCメッセージは型安全)'
+      - 'operations return Result type (操作はResult型を返す)'
+      - 'timeout enforced for all invoke calls (全invokeはタイムアウト強制)'
+    related_terms:
+      - 'BackendMainAPI'
+      - 'RendererBackendAPI'
+      - 'RendererMainAPI'
+    evolution:
+      - date: '2025-12-30'
+        change: '初版定義 - MessagePort基盤IPC抽象化サービス'
+
+  - term: 'CompressionService'
+    japanese: '会話圧縮サービス'
+    definition: '会話履歴のトークン数管理と自動要約圧縮を提供するドメインサービス。'
+    type: 'Service'
+    responsibilities:
+      - 'トークン数計測 (AI SDK tokenizer使用)'
+      - '圧縮必要性判定 (閾値ベース)'
+      - 'ローリングサマリー生成 (AI要約API呼び出し)'
+      - 'SessionSnapshot作成・管理'
+      - '圧縮プレビュー提供 (ユーザー確認用)'
+    technical_details:
+      - '実装: src/backend/compression/CompressionService.ts'
+      - 'Vercel AI SDK v5 tokenizer使用'
+      - '圧縮アルゴリズム: 古いメッセージを要約し、最近のretentionTokens分を保持'
+      - '非同期バッチ処理 (大量メッセージ対応)'
+    invariants:
+      - 'compression preserves conversation continuity (圧縮は会話の連続性を保持)'
+      - 'retention tokens always preserved (保持トークンは常に保持)'
+      - 'summaries are tokenized using same model as chat (要約は会話と同じモデルでトークン化)'
+      - 'compression is idempotent (圧縮はべき等)'
+    related_terms:
+      - 'SessionSnapshot'
+      - 'CompressionSettings'
+      - 'TokenUsageInfo'
+      - 'ModelConfig'
+    evolution:
+      - date: '2025-12-30'
+        change: '初版定義 - 会話圧縮のドメインサービス'
+
+  # === Enums (列挙型) ===
+
+  - term: 'AIProvider'
+    japanese: 'AIプロバイダー種別'
+    definition: 'サポートされるAIプロバイダーの列挙型。'
+    type: 'Enum'
+    values:
+      - 'openai: OpenAI API (GPT-4o, GPT-4等)'
+      - 'anthropic: Anthropic API (Claude 3.5 Sonnet等)'
+      - 'google: Google AI API (Gemini Pro等)'
+      - 'azure: Azure OpenAI Service'
+    invariants:
+      - 'fixed set of values (固定値セット - 拡張は実装変更が必要)'
+      - 'each provider has specific config requirements (各プロバイダーは固有の設定要件)'
+    related_terms:
+      - 'AIProviderConfiguration'
+      - 'AIModelDefinition'
+    evolution:
+      - date: '2025-12-30'
+        change: '初版定義 - サポートプロバイダー列挙'
+
+  - term: 'ProxyMode'
+    japanese: 'プロキシモード'
+    definition: 'プロキシ設定のモードを表す列挙型。'
+    type: 'Enum'
+    values:
+      - 'system: OS設定のプロキシを使用'
+      - 'custom: カスタムプロキシ設定を使用'
+      - 'none: プロキシなし (直接接続)'
+    invariants:
+      - 'mode determines which settings are active (モードが有効な設定を決定)'
+      - "mode = 'system' implies ProxySettings.httpProxy is ignored (systemモードはカスタム設定無視)"
+    related_terms:
+      - 'ProxySettings'
+      - 'CertificateMode'
+    evolution:
+      - date: '2025-12-30'
+        change: '初版定義 - プロキシモード列挙'
+
+# === 補足説明 ===
+
+notes:
+  - category: 'データベーススキーマ'
+    description: |
+      全エンティティはDrizzle ORMを使用してSQLiteに永続化されます。
+      - UnixタイムスタンプはintegerとしてDB保存、API返却時にISO 8601文字列に変換
+      - JSON型はtext('column', { mode: 'json' })で保存
+      - 外部キーは{ onDelete: 'cascade' }または{ onDelete: 'set null' }で整合性保証
+
+  - category: 'Value Object vs Entity'
+    description: |
+      - Entity: 一意のID (UUID) を持ち、ライフサイクル管理が必要 (例: ChatSession, ToolInvocation)
+      - Value Object: 属性値で比較され、不変 (immutable) (例: ProxySettings, AIModelSelection)
+      - MessagePartは特殊ケース: DBではEntityだが、意味的にはValue Object (アトミックなコンテンツブロック)
+
+  - category: 'HITL (Human-in-the-Loop)'
+    description: |
+      ToolPermissionRuleとToolApprovalRequestにより、危険なツール実行を人間が承認可能。
+      - ルールベース自動承認/拒否 (優先度順評価)
+      - リアルタイム承認ダイアログ (ToolApprovalRequestイベント)
+      - セキュリティとユーザー制御のバランス
+
+  - category: '3プロセスアーキテクチャ'
+    description: |
+      - Main Process: ウィンドウ管理、IPCルーティング、アップデーター
+      - Backend Process (Utility Process): AI統合、DB、MCP、設定管理、圧縮サービス
+      - Renderer Process: React UI、tRPCクライアント
+      - 理由: 重いI/O・CPU処理をメインプロセスから分離し、UI応答性を保証
+
+  - category: '会話圧縮戦略'
+    description: |
+      - ローリングサマリー: 古いメッセージを要約し、最近のN個を保持
+      - 閾値ベース: トークン使用率が閾値(例: 95%)超過時に自動圧縮
+      - モデル固有設定: ModelConfigで各モデルの最適閾値・保持トークン数を管理
+      - ユーザー上書き: CompressionSettingsでセッションごとのカスタマイズ可能

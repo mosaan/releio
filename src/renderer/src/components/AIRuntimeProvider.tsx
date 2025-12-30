@@ -26,7 +26,6 @@ interface AIRuntimeProviderProps {
   mastraSessionId: string | null
   initialMessages?: ChatMessageWithParts[]
   currentSession?: ChatSessionWithMessages | null
-  isRefreshing?: boolean // NEW: リフレッシュ中フラグ
   onMessageCompleted?: () => void | Promise<void>
   onToolApprovalRequired?: (request: ToolApprovalRequestPayload) => void
 }
@@ -38,7 +37,6 @@ export function AIRuntimeProvider({
   mastraSessionId,
   initialMessages,
   currentSession,
-  isRefreshing = false, // NEW: デフォルトfalse
   onMessageCompleted,
   onToolApprovalRequired
 }: AIRuntimeProviderProps): React.JSX.Element {
@@ -200,15 +198,7 @@ export function AIRuntimeProvider({
         )
 
         // Use Mastra streaming instead of v1
-        if (!sessionId) {
-          throw new Error('Chat session ID is required for message persistence')
-        }
-        const stream = await streamMastraText(
-          mastraSession,
-          sessionId,
-          formattedMessages,
-          abortSignal
-        )
+        const stream = await streamMastraText(mastraSession, formattedMessages, abortSignal)
 
         const contentParts: any[] = []
 
@@ -281,34 +271,10 @@ export function AIRuntimeProvider({
 
   const runtime = useLocalRuntime(adapter)
 
-  // Clear runtime when session changes (not on every re-render)
+  // Import initial messages when session changes
   useEffect(() => {
-    if (!chatSessionId) return
-
-    logger.info('[History] Session changed, clearing runtime', { chatSessionId })
-    // Clear runtime to prepare for new session messages
-    runtime.threads.main.import(ExportedMessageRepository.fromArray([]))
-  }, [chatSessionId, runtime])
-
-  // Load messages when they change (including initial load and updates within session)
-  useEffect(() => {
-    // リフレッシュ中はメッセージインポートをスキップ（競合状態を防止）
-    if (isRefreshing) {
-      logger.info(
-        '[History] Refresh in progress, skipping message import to prevent race condition'
-      )
-      return
-    }
-
-    // セッションIDがない場合はスキップ
-    if (!chatSessionId) {
-      return
-    }
-
     if (initialMessages && initialMessages.length > 0) {
-      logger.info(`[History] Loading ${initialMessages.length} messages into runtime`, {
-        chatSessionId
-      })
+      logger.info(`[History] Loading ${initialMessages.length} messages into runtime`)
 
       try {
         // Convert database messages directly to ThreadMessage format
@@ -336,11 +302,12 @@ export function AIRuntimeProvider({
       } catch (error) {
         logger.error('[History] Failed to load messages:', error)
       }
-    } else if (!isRefreshing) {
-      // Only clear when not refreshing and truly no messages
-      logger.info('[History] No messages in session, keeping runtime clear')
+    } else {
+      // Clear messages when switching to a session with no history
+      logger.info('[History] No initial messages, clearing runtime')
+      runtime.threads.main.import(ExportedMessageRepository.fromArray([]))
     }
-  }, [initialMessages, currentSession?.compressionSummaries, chatSessionId, runtime, isRefreshing])
+  }, [chatSessionId, initialMessages, currentSession?.compressionSummaries, runtime])
 
   return <AssistantRuntimeProvider runtime={runtime}>{children}</AssistantRuntimeProvider>
 }

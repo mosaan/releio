@@ -6,7 +6,6 @@ import type { AIMessage, AIProvider, AppEvent } from '@common/types'
 import { EventType } from '@common/types'
 import { getAISettingsV2 as loadAISettingsV2 } from '../settings/ai-settings'
 import { mastraToolService, type MastraToolRecord } from './MastraToolService'
-import { mcpManager } from '../mcp'
 import logger from '../logger'
 
 type SessionRecord = {
@@ -52,18 +51,6 @@ export class MastraChatService {
   private sessions = new Map<string, SessionRecord>()
   private streams = new Map<string, StreamRecord>()
   private readonly defaultResourceId = 'default-resource'
-
-  constructor() {
-    // Listen for MCP server status changes to re-initialize agent when servers connect
-    mcpManager.onStatusChange((status) => {
-      if (status.status === 'connected') {
-        logger.info('[Mastra] MCP server connected, invalidating agent to reload tools', {
-          serverId: status.serverId
-        })
-        this.invalidateAgent()
-      }
-    })
-  }
 
   async getStatus(): Promise<MastraStatus> {
     try {
@@ -166,14 +153,8 @@ export class MastraChatService {
       params
 
     try {
-      logger.info('[Mastra] Starting stream with options', {
-        format: 'aisdk',
-        hasRequireToolApproval: true
-      })
-
       const stream = await this.agent!.stream(uiMessages, {
         format: 'aisdk',
-        requireToolApproval: true, // Force approval for ALL tools to debug HITL
         abortSignal: abortController.signal,
         threadId: session.threadId,
         resourceId: session.resourceId

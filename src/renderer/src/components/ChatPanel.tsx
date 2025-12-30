@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
-import { Settings, AlertCircle, Archive, LoaderCircle } from 'lucide-react'
+import { Settings, AlertCircle, Archive } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
 import { Thread } from '@renderer/components/assistant-ui/thread'
 import { AIRuntimeProvider } from '@renderer/components/AIRuntimeProvider'
@@ -31,7 +31,6 @@ export function ChatPanel({ onSettings }: ChatPanelProps): React.JSX.Element {
     updateSession,
     refreshSessions,
     refreshCurrentSession,
-    isRefreshing, // NEW: セッションリフレッシュ状態を取得
     mastraSessionId,
     mastraStatus,
     initializeMastraSession
@@ -41,9 +40,6 @@ export function ChatPanel({ onSettings }: ChatPanelProps): React.JSX.Element {
   const [compressionNeeded, setCompressionNeeded] = useState<boolean>(false)
   const [showCompressionDialog, setShowCompressionDialog] = useState<boolean>(false)
   const [apiKey, setApiKey] = useState<string>('')
-
-  // Message save error state (to be fully implemented in Phase 3-6 with toast)
-  const [messageSaveError, setMessageSaveError] = useState<string | null>(null)
 
   // HITL Tool Approval state
   const [pendingApproval, setPendingApproval] = useState<ToolApprovalRequestPayload | null>(null)
@@ -74,45 +70,6 @@ export function ChatPanel({ onSettings }: ChatPanelProps): React.JSX.Element {
     logger.info('[ChatPanel] Tool declined:', reason)
     setPendingApproval(null)
   }, [])
-
-  // Listen for message save errors (Phase 3-6: will be fully implemented with toast)
-  useEffect(() => {
-    logger.info('[ChatPanel] Message save error handling infrastructure in place')
-
-    // Listen for message saved events to refresh session
-    const handleMessageSaved = async (event: any) => {
-      // Check if the event is relevant to the current session
-      if (
-        event &&
-        event.payload &&
-        event.payload.success &&
-        event.payload.sessionId === currentSessionId
-      ) {
-        logger.info('[ChatPanel] Message saved event received, refreshing session (silent)')
-        await refreshSessions()
-        // メッセージ保存後はローディング表示を出さずに裏で更新する（ちらつき防止）
-        await refreshCurrentSession(false)
-      }
-    }
-
-    // Subscribe to messageSaved event
-    if (window.backend?.onEvent) {
-      window.backend.onEvent('messageSaved', handleMessageSaved)
-    }
-
-    // Backend now publishes 'messageSaveFailed' events with error details
-    // Event listener integration will be completed in Phase 3-6 with toast notifications
-
-    // Suppress lint warning for now - will be used in Phase 3-6
-    void setMessageSaveError
-
-    return () => {
-      // Cleanup listener
-      if (window.backend?.offEvent) {
-        window.backend.offEvent('messageSaved')
-      }
-    }
-  }, [currentSessionId, refreshSessions, refreshCurrentSession, setMessageSaveError])
 
   // Handle model selection change and persist to database
   const handleModelChange = async (newSelection: AIModelSelection | null) => {
@@ -284,15 +241,6 @@ export function ChatPanel({ onSettings }: ChatPanelProps): React.JSX.Element {
         </div>
       </header>
 
-      {/* Message Save Error Alert */}
-      {messageSaveError && (
-        <Alert variant="destructive" className="m-4 mb-0">
-          <AlertCircle className="h-4 w-4" />
-          <AlertTitle>Message Save Failed</AlertTitle>
-          <AlertDescription>{messageSaveError}</AlertDescription>
-        </Alert>
-      )}
-
       {/* Main Content */}
       <main className="flex-1 overflow-hidden flex flex-col">
         {!hasProviderConfigs ? (
@@ -345,28 +293,18 @@ export function ChatPanel({ onSettings }: ChatPanelProps): React.JSX.Element {
                 </AlertDescription>
               </Alert>
             )}
-            <div className="flex-1 overflow-hidden relative">
-              {/* Loading overlay during session refresh */}
-              {isRefreshing && (
-                <div className="absolute inset-0 bg-background/50 flex items-center justify-center z-10 backdrop-blur-sm">
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <LoaderCircle className="h-5 w-5 animate-spin" />
-                    <span>Loading messages...</span>
-                  </div>
-                </div>
-              )}
+            <div className="flex-1 overflow-hidden">
               {modelSelection && mastraSessionId ? (
                 <AIRuntimeProvider
+                  key={currentSession?.id} // Force remount when session changes
                   modelSelection={modelSelection}
                   chatSessionId={currentSession?.id}
                   mastraSessionId={mastraSessionId}
                   initialMessages={currentSession?.messages}
                   currentSession={currentSession}
-                  isRefreshing={isRefreshing}
                   onMessageCompleted={async () => {
-                    // Do nothing here - wait for messageSaved event from backend
-                    // This prevents race conditions where refresh happens before DB save is complete
-                    logger.info('[ChatPanel] Message streaming completed, waiting for save event')
+                    await refreshSessions()
+                    await refreshCurrentSession()
                   }}
                   onToolApprovalRequired={handleToolApprovalRequired}
                 >

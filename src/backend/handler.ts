@@ -1,5 +1,4 @@
 import { Connection } from '@common/connection'
-import { EventType } from '@common/types'
 import type {
   Result,
   AISettingsV2,
@@ -159,50 +158,31 @@ export class Handler {
   }
 
   async streamMastraText(
-    mastraSessionId: string,
-    chatSessionId: string,
+    sessionId: string,
     messages: AIMessage[]
   ): Promise<Result<string, string>> {
     try {
       const streamId = await mastraChatService.streamText(
-        mastraSessionId,
+        sessionId,
         messages,
         (channel: string, event: AppEvent) => {
           this._rendererConnection.publishEvent(channel, event)
         },
         async (parts) => {
           logger.info('[Mastra] Saving assistant message to DB', {
-            mastraSessionId,
-            chatSessionId,
+            sessionId,
             partsCount: parts.length
           })
 
           try {
-            const messageId = await this._sessionStore.addMessage({
-              sessionId: chatSessionId,
+            await this._sessionStore.addMessage({
+              sessionId,
               role: 'assistant',
               parts: parts as any // Cast to match AddMessageRequest parts type
             })
-            logger.info('[Mastra] Assistant message saved successfully', { messageId })
-
-            // Publish success event
-            this._rendererConnection.publishEvent('messageSaved', {
-              type: EventType.Message,
-              payload: { sessionId: chatSessionId, messageId, success: true }
-            })
+            logger.info('[Mastra] Assistant message saved successfully')
           } catch (err) {
-            const errorMessage = err instanceof Error ? err.message : 'Unknown error'
             logger.error('[Mastra] Failed to save assistant message', err)
-
-            // Publish failure event
-            this._rendererConnection.publishEvent('messageSaveFailed', {
-              type: EventType.Error,
-              payload: {
-                sessionId: chatSessionId,
-                error: errorMessage,
-                parts
-              }
-            })
           }
         }
       )
