@@ -45,6 +45,11 @@ Object.defineProperty(window, 'backend', {
     onEvent: vi.fn(),
     offEvent: vi.fn(),
     getAISettingsV2: vi.fn(),
+    // Mastra APIs
+    getMastraStatus: vi.fn(),
+    startMastraSession: vi.fn(),
+    streamMastraText: vi.fn(),
+    abortMastraStream: vi.fn(),
     // HITL Tool Permission APIs
     listToolPermissionRules: vi.fn(),
     getToolPermissionRule: vi.fn(),

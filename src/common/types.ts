@@ -400,7 +400,10 @@ export interface RendererBackendAPI {
   testAIProviderConnection: (config: AIConfig) => Promise<Result<boolean>>
   // Mastra MVP APIs
   getMastraStatus: () => Promise<Result<MastraStatus>>
-  startMastraSession: (resourceId?: string) => Promise<Result<MastraSessionInfo, string>>
+  startMastraSession: (
+    sessionId: string,
+    resourceId?: string
+  ) => Promise<Result<MastraSessionInfo, string>>
   streamMastraText: (sessionId: string, messages: AIMessage[]) => Promise<Result<string, string>>
   abortMastraStream: (streamId: string) => Promise<Result<void, string>>
   // AI Settings v2 APIs

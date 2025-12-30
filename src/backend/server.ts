@@ -6,6 +6,7 @@ import { Handler } from './handler'
 import logger from './logger'
 import { db, runMigrations, ensureConnection } from './db'
 import { mcpManager } from './mcp'
+import { mastraChatService } from './mastra/MastraChatService'
 import { backendRouter } from './trpc/router'
 import { createMessagePortHandler } from './trpc/handler'
 
@@ -27,6 +28,9 @@ export class Server {
   async init(): Promise<void> {
     await ensureConnection(db)
     await runMigrations(db)
+
+    // Reset Mastra sessions to ensure DB/Mastra consistency on startup
+    mastraChatService.resetSessions()
 
     // Initialize MCP Manager - auto-starts enabled servers
     await mcpManager.initialize()

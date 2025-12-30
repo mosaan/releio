@@ -69,6 +69,13 @@ export function AIRuntimeProvider({
           throw new Error('Mastra session not initialized. Please try refreshing the page.')
         }
 
+        // CRITICAL: Validate session IDs match
+        if (sessionId && sessionId !== mastraSession) {
+          const errorMsg = `Session ID mismatch! DB: ${sessionId}, Mastra: ${mastraSession}`
+          logger.error('[AIAdapter]', errorMsg)
+          throw new Error(errorMsg)
+        }
+
         // Filter out compression markers (they're for display only, not for AI)
         const messagesToSend = messages.filter((message: ThreadMessage) => {
           // Exclude compression markers (system messages with isCompressionMarker metadata)

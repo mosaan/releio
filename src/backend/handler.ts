@@ -141,11 +141,37 @@ export class Handler {
     return ok(status)
   }
 
+  /**
+   * Ensure all active Mastra sessions use DB session IDs
+   * Call this during application startup
+   */
+  async cleanupMastraSessions(): Promise<Result<void, string>> {
+    try {
+      mastraChatService.invalidateAgent()
+      logger.info('[Mastra] Cleaned up all in-memory sessions on startup')
+      return ok(undefined)
+    } catch (err) {
+      logger.error('[Mastra] Failed to cleanup sessions', err)
+      return error(err instanceof Error ? err.message : 'Cleanup failed')
+    }
+  }
+
   async startMastraSession(
+    sessionId: string,
     resourceId?: string
   ): Promise<Result<{ sessionId: string; threadId: string; resourceId?: string }, string>> {
     try {
-      const session = await mastraChatService.startSession(resourceId)
+      if (!sessionId) {
+        return error<string>('Session ID is required - create database session first')
+      }
+
+      // Verify session exists in database
+      const dbSession = await this._sessionStore.getSession(sessionId)
+      if (!dbSession) {
+        return error<string>(`Database session ${sessionId} not found`)
+      }
+
+      const session = await mastraChatService.startSession(sessionId, resourceId)
       return ok({
         sessionId: session.sessionId,
         threadId: session.threadId,
@@ -163,6 +189,22 @@ export class Handler {
     messages: AIMessage[]
   ): Promise<Result<string, string>> {
     try {
+      // CRITICAL: Validate session exists in database
+      const dbSession = await this._sessionStore.getSession(sessionId)
+      if (!dbSession) {
+        const errorMsg = `Cannot stream: Database session ${sessionId} not found`
+        logger.error('[Mastra]', errorMsg)
+        return error<string>(errorMsg)
+      }
+
+      // CRITICAL: Validate session exists in Mastra
+      const mastraSession = mastraChatService.getSession(sessionId)
+      if (!mastraSession) {
+        logger.warn('[Mastra] Session not found in Mastra, initializing...', { sessionId })
+        // Auto-recover by creating Mastra session
+        await mastraChatService.startSession(sessionId)
+      }
+
       const streamId = await mastraChatService.streamText(
         sessionId,
         messages,

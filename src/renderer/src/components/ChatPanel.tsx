@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { Settings, AlertCircle, Archive } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
 import { Thread } from '@renderer/components/assistant-ui/thread'
@@ -32,8 +32,7 @@ export function ChatPanel({ onSettings }: ChatPanelProps): React.JSX.Element {
     refreshSessions,
     refreshCurrentSession,
     mastraSessionId,
-    mastraStatus,
-    initializeMastraSession
+    mastraStatus
   } = useSessionManager()
   const [hasProviderConfigs, setHasProviderConfigs] = useState<boolean>(true)
   const [hasAvailableModels, setHasAvailableModels] = useState<boolean>(true)
@@ -44,16 +43,10 @@ export function ChatPanel({ onSettings }: ChatPanelProps): React.JSX.Element {
   // HITL Tool Approval state
   const [pendingApproval, setPendingApproval] = useState<ToolApprovalRequestPayload | null>(null)
 
-  // Initialize Mastra session when the component mounts or when mastraStatus becomes ready
-  useEffect(() => {
-    const initMastra = async (): Promise<void> => {
-      if (!mastraSessionId && mastraStatus === null) {
-        logger.info('[ChatPanel] Initializing Mastra session...')
-        await initializeMastraSession()
-      }
-    }
-    initMastra()
-  }, [mastraSessionId, mastraStatus, initializeMastraSession])
+  // Check if session is ready (DB session ID must match Mastra session ID)
+  const isSessionReady = useMemo(() => {
+    return !!(currentSessionId && mastraSessionId && currentSessionId === mastraSessionId)
+  }, [currentSessionId, mastraSessionId])
 
   // Handle tool approval callbacks
   const handleToolApprovalRequired = useCallback((request: ToolApprovalRequestPayload) => {
@@ -294,7 +287,7 @@ export function ChatPanel({ onSettings }: ChatPanelProps): React.JSX.Element {
               </Alert>
             )}
             <div className="flex-1 overflow-hidden">
-              {modelSelection && mastraSessionId ? (
+              {modelSelection && isSessionReady ? (
                 <AIRuntimeProvider
                   key={currentSession?.id} // Force remount when session changes
                   modelSelection={modelSelection}
@@ -325,6 +318,10 @@ export function ChatPanel({ onSettings }: ChatPanelProps): React.JSX.Element {
                     <p className="text-sm">
                       {mastraStatus && !mastraStatus.ready ? mastraStatus.reason : 'Please wait'}
                     </p>
+                    {!currentSessionId && <p className="text-xs">Creating session...</p>}
+                    {currentSessionId && !mastraSessionId && (
+                      <p className="text-xs">Connecting to AI service...</p>
+                    )}
                   </div>
                 </div>
               )}

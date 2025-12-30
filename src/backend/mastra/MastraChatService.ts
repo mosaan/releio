@@ -6,6 +6,7 @@ import type { AIMessage, AIProvider, AppEvent } from '@common/types'
 import { EventType } from '@common/types'
 import { getAISettingsV2 as loadAISettingsV2 } from '../settings/ai-settings'
 import { mastraToolService, type MastraToolRecord } from './MastraToolService'
+import { mcpManager } from '../mcp'
 import logger from '../logger'
 
 import { sessionContext } from './session-context'
@@ -58,6 +59,16 @@ export class MastraChatService {
 
   constructor() {
     this.setupApprovalListeners()
+
+    // Listen for MCP server status changes to re-initialize agent when servers connect
+    mcpManager.onStatusChange((status) => {
+      if (status.status === 'connected') {
+        logger.info('[Mastra] MCP server connected, invalidating agent to reload tools', {
+          serverId: status.serverId
+        })
+        this.invalidateAgent()
+      }
+    })
   }
 
   private setupApprovalListeners() {
@@ -100,19 +111,39 @@ export class MastraChatService {
     }
   }
 
-  async startSession(resourceId?: string): Promise<SessionRecord> {
+  async startSession(sessionId: string, resourceId?: string): Promise<SessionRecord> {
     await this.ensureAgent()
-    const sessionId = randomUUID()
+
+    // CRITICAL: sessionId is now REQUIRED - must come from database
+    if (!sessionId) {
+      throw new Error('Session ID is required - must be created in database first')
+    }
+
+    // Check if session already exists in Mastra
+    const existing = this.sessions.get(sessionId)
+    if (existing) {
+      logger.info('[Mastra] Session already exists, reusing', { sessionId })
+      return existing
+    }
+
     const threadId = randomUUID()
     const session: SessionRecord = {
-      sessionId,
+      sessionId, // Use database-provided ID
       threadId,
       resourceId: resourceId || this.defaultResourceId,
       history: []
     }
     this.sessions.set(sessionId, session)
-    logger.info('[Mastra] Session started', { sessionId, threadId, resourceId: session.resourceId })
+    logger.info('[Mastra] Session started with DB session ID', {
+      sessionId,
+      threadId,
+      resourceId: session.resourceId
+    })
     return session
+  }
+
+  getSession(sessionId: string): SessionRecord | null {
+    return this.sessions.get(sessionId) || null
   }
 
   async streamText(
@@ -376,6 +407,17 @@ export class MastraChatService {
     this.selection = null
     mastraToolService.invalidateCache()
     logger.info('[Mastra] Agent invalidated - will reinitialize on next request')
+  }
+
+  /**
+   * Reset all in-memory sessions
+   * Call this on startup to ensure no stale sessions exist
+   */
+  resetSessions(): void {
+    this.sessions.clear()
+    this.streams.clear()
+    this.invalidateAgent()
+    logger.info('[Mastra] All sessions reset')
   }
 
   /**

@@ -25,14 +25,18 @@ export async function getMastraStatus(): Promise<MastraStatus> {
   return { ready: false, reason: result.error ? String(result.error) : 'Unknown error' }
 }
 
-export async function startMastraSession(resourceId?: string): Promise<MastraSessionInfo> {
-  const result = await window.backend.startMastraSession(resourceId)
-  if (isOk(result)) {
-    return result.value
-  }
-  const message = result.error ? String(result.error) : 'Failed to start Mastra session'
-  logger.error(message)
-  throw new Error(message)
+/**
+ * @deprecated This function is deprecated.
+ * Session creation should go through SessionManager.createSession()
+ * which handles atomic DB + Mastra session creation.
+ *
+ * Direct calls to startMastraSession are no longer supported as
+ * Mastra requires a database session ID.
+ */
+export async function startMastraSession(_resourceId?: string): Promise<MastraSessionInfo> {
+  // This is a wrapper - backend signature changed but we need to provide sessionId
+  // This function should probably be removed or refactored to accept sessionId
+  throw new Error('startMastraSession deprecated - use SessionManager.createSession() instead')
 }
 
 export async function streamMastraText(

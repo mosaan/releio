@@ -8,6 +8,17 @@ import type { ChatSessionRow, ChatSessionWithMessages } from '@common/chat-types
 describe('SessionManager Context', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    // Default mocks for Mastra to prevent errors in existing tests
+    window.backend.getMastraStatus = vi
+      .fn()
+      .mockResolvedValue(ok({ ready: true, provider: 'openai', model: 'gpt-4' }))
+    window.backend.startMastraSession = vi.fn().mockImplementation((sessionId) =>
+      ok({
+        sessionId: sessionId || 'default-session',
+        threadId: 'thread-1',
+        resourceId: 'default'
+      })
+    )
   })
 
   describe('Initialization', () => {
@@ -109,6 +120,65 @@ describe('SessionManager Context', () => {
 
       await waitFor(() => {
         expect(screen.getByTestId('count')).toHaveTextContent('1')
+      })
+    })
+  })
+
+  describe('Unified Session Creation', () => {
+    it('should create DB and Mastra sessions with matching IDs', async () => {
+      const user = userEvent.setup()
+
+      const dbSessionId = 'unified-session-id'
+
+      window.backend.getLastSessionId = vi.fn().mockResolvedValue(ok(null))
+      window.backend.listChatSessions = vi.fn().mockResolvedValue(ok([]))
+      window.backend.createChatSession = vi.fn().mockResolvedValue(ok(dbSessionId))
+      window.backend.getChatSession = vi.fn().mockResolvedValue(
+        ok({
+          id: dbSessionId,
+          title: 'New Chat',
+          messages: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          messageCount: 0,
+          dataSchemaVersion: 1
+        })
+      )
+      window.backend.setLastSessionId = vi.fn().mockResolvedValue(ok(undefined))
+
+      // Mock startMastraSession to return same ID
+      window.backend.startMastraSession = vi.fn().mockImplementation((id) =>
+        ok({
+          sessionId: id,
+          threadId: 't1',
+          resourceId: 'r1'
+        })
+      )
+
+      const TestComponent = () => {
+        const { createSession, currentSessionId, mastraSessionId } = useSessionManager()
+        return (
+          <div>
+            <button onClick={() => createSession({ title: 'New Chat' })}>Create</button>
+            <div data-testid="db-id">{currentSessionId || 'none'}</div>
+            <div data-testid="mastra-id">{mastraSessionId || 'none'}</div>
+          </div>
+        )
+      }
+
+      render(
+        <SessionManagerProvider>
+          <TestComponent />
+        </SessionManagerProvider>
+      )
+
+      await user.click(screen.getByRole('button', { name: /create/i }))
+
+      await waitFor(() => {
+        expect(window.backend.createChatSession).toHaveBeenCalled()
+        expect(window.backend.startMastraSession).toHaveBeenCalledWith(dbSessionId, undefined)
+        expect(screen.getByTestId('db-id')).toHaveTextContent(dbSessionId)
+        expect(screen.getByTestId('mastra-id')).toHaveTextContent(dbSessionId)
       })
     })
   })

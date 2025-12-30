@@ -7,7 +7,7 @@ import type {
   CreateSessionRequest,
   SessionUpdates
 } from '@common/chat-types'
-import type { AIModelSelection, MastraSessionInfo, MastraStatus } from '@common/types'
+import type { AIModelSelection, MastraStatus } from '@common/types'
 
 interface SessionManagerContextValue {
   // Current session state
@@ -33,7 +33,6 @@ interface SessionManagerContextValue {
   // Mastra session management
   mastraSessionId: string | null
   mastraStatus: MastraStatus | null
-  initializeMastraSession: () => Promise<MastraSessionInfo | null>
 }
 
 const SessionManagerContext = createContext<SessionManagerContextValue | undefined>(undefined)
@@ -54,40 +53,6 @@ export function SessionManagerProvider({
   // Mastra session state
   const [mastraSessionId, setMastraSessionId] = useState<string | null>(null)
   const [mastraStatus, setMastraStatus] = useState<MastraStatus | null>(null)
-
-  // Initialize Mastra session
-  const initializeMastraSession = useCallback(async (): Promise<MastraSessionInfo | null> => {
-    try {
-      // First check Mastra status
-      const statusResult = await window.backend.getMastraStatus()
-      if (isOk(statusResult)) {
-        setMastraStatus(statusResult.value)
-
-        if (!statusResult.value.ready) {
-          logger.warn('[Mastra] Not ready:', statusResult.value.reason)
-          return null
-        }
-      } else {
-        logger.error('[Mastra] Failed to get status')
-        return null
-      }
-
-      // Start a new Mastra session
-      const sessionResult = await window.backend.startMastraSession()
-      if (isOk(sessionResult)) {
-        const session = sessionResult.value
-        setMastraSessionId(session.sessionId)
-        logger.info(`[Mastra] Session initialized: ${session.sessionId}`)
-        return session
-      } else {
-        logger.error('[Mastra] Failed to start session:', sessionResult.error)
-        return null
-      }
-    } catch (error) {
-      logger.error('[Mastra] Error initializing session:', error)
-      return null
-    }
-  }, [])
 
   // Load sessions from backend (pure function - no currentSessionId dependency)
   const refreshSessions = useCallback(async () => {
@@ -143,24 +108,36 @@ export function SessionManagerProvider({
       try {
         await window.connectBackend()
 
+        // Check Mastra status
+        const statusResult = await window.backend.getMastraStatus()
+        if (isOk(statusResult)) {
+          setMastraStatus(statusResult.value)
+        }
+
         // Load last session ID
         const lastSessionResult = await window.backend.getLastSessionId()
         if (isOk(lastSessionResult) && lastSessionResult.value) {
-          setCurrentSessionId(lastSessionResult.value)
-          await loadCurrentSession(lastSessionResult.value)
+          const lastSessionId = lastSessionResult.value
+
+          // Use switchSession to properly initialize both DB and Mastra
+          await switchSession(lastSessionId)
+        } else {
+          // No previous session - create initial session
+          logger.info('[Session] No previous session, creating initial session')
+          await createSession({ title: 'New Chat' })
         }
 
         // Load session list
         await refreshSessions()
       } catch (error) {
-        logger.error('Failed to initialize SessionManager:', error)
+        logger.error('[Session] Failed to initialize SessionManager:', error)
       } finally {
         setIsLoading(false)
       }
     }
 
     initialize()
-  }, [])
+  }, []) // Remove loadCurrentSession dependency
 
   // Update current session metadata when sessions list or currentSessionId changes
   useEffect(() => {
@@ -195,39 +172,89 @@ export function SessionManagerProvider({
     })
   }, [currentSessionId, sessions])
 
-  // Create new session
-  const createSession = useCallback(
-    async (request: CreateSessionRequest): Promise<string | null> => {
+  // Internal helper: Create DB session + initialize Mastra atomically
+  const createSessionAtomic = useCallback(
+    async (
+      request: CreateSessionRequest
+    ): Promise<{ dbSessionId: string; mastraSessionId: string } | null> => {
       try {
-        // Add model selection if available
+        // Step 1: Create database session first
         const fullRequest: CreateSessionRequest = {
           ...request,
           providerConfigId: modelSelection?.providerConfigId,
           modelId: modelSelection?.modelId
         }
 
-        const result = await window.backend.createChatSession(fullRequest)
-        if (isOk(result)) {
-          const sessionId = result.value
-          logger.info(`Created new session: ${sessionId}`)
-
-          // Refresh session list
-          await refreshSessions()
-
-          // Switch to new session
-          await switchSession(sessionId)
-
-          return sessionId
-        } else {
-          logger.error('Failed to create session:', result.error)
+        const dbResult = await window.backend.createChatSession(fullRequest)
+        if (!isOk(dbResult)) {
+          logger.error('[Session] Failed to create DB session:', dbResult.error)
           return null
         }
+
+        const dbSessionId = dbResult.value
+        logger.info(`[Session] DB session created: ${dbSessionId}`)
+
+        // Step 2: Initialize Mastra session with DB session ID (REQUIRED)
+        const mastraResult = await window.backend.startMastraSession(dbSessionId, undefined)
+        if (!isOk(mastraResult)) {
+          logger.error('[Session] Failed to initialize Mastra session:', mastraResult.error)
+          // CRITICAL: Clean up orphaned DB session
+          await window.backend.deleteChatSession(dbSessionId)
+          return null
+        }
+
+        const mastraSessionId = mastraResult.value.sessionId
+
+        // Validate IDs match
+        if (dbSessionId !== mastraSessionId) {
+          logger.error('[Session] ID mismatch!', { dbSessionId, mastraSessionId })
+          await window.backend.deleteChatSession(dbSessionId)
+          throw new Error('Session ID mismatch between DB and Mastra')
+        }
+
+        logger.info(`[Session] Atomic session creation complete: ${dbSessionId}`)
+        return { dbSessionId, mastraSessionId }
       } catch (error) {
-        logger.error('Error creating session:', error)
+        logger.error('[Session] Atomic session creation failed:', error)
         return null
       }
     },
-    [modelSelection, refreshSessions]
+    [modelSelection]
+  )
+
+  // Create new session
+  const createSession = useCallback(
+    async (request: CreateSessionRequest): Promise<string | null> => {
+      try {
+        // Use atomic creation
+        const result = await createSessionAtomic(request)
+        if (!result) {
+          logger.error('[Session] Failed to create session')
+          return null
+        }
+
+        const { dbSessionId } = result
+
+        // Update state
+        setCurrentSessionId(dbSessionId)
+        setMastraSessionId(dbSessionId) // Always equal to DB ID
+
+        // Save as last session
+        await window.backend.setLastSessionId(dbSessionId)
+
+        // Load session details
+        await loadCurrentSession(dbSessionId)
+
+        // Refresh session list
+        await refreshSessions()
+
+        return dbSessionId
+      } catch (error) {
+        logger.error('[Session] Error creating session:', error)
+        return null
+      }
+    },
+    [createSessionAtomic, refreshSessions, loadCurrentSession]
   )
 
   // Switch to different session
@@ -242,7 +269,29 @@ export function SessionManagerProvider({
         // Load session details
         await loadCurrentSession(sessionId)
 
-        logger.info(`Switched to session: ${sessionId}`)
+        // Initialize/re-sync Mastra session with DB session ID
+        logger.info(`[Session] Syncing Mastra session for: ${sessionId}`)
+        const mastraResult = await window.backend.startMastraSession(sessionId, undefined)
+
+        if (isOk(mastraResult)) {
+          const mastraSessionId = mastraResult.value.sessionId
+
+          // CRITICAL: Validate IDs match
+          if (mastraSessionId !== sessionId) {
+            logger.error('[Session] ID mismatch after switch!', {
+              dbSessionId: sessionId,
+              mastraSessionId
+            })
+            throw new Error('Session ID mismatch - Mastra and DB out of sync')
+          }
+
+          setMastraSessionId(sessionId) // Always equal to DB ID
+          logger.info(`[Session] Switched to session: ${sessionId}`)
+        } else {
+          logger.error('[Session] Failed to sync Mastra session:', mastraResult.error)
+          // Keep UI functional but disable chat
+          setMastraSessionId(null)
+        }
       } catch (error) {
         logger.error('Error switching session:', error)
       }
@@ -322,8 +371,7 @@ export function SessionManagerProvider({
     setModelSelection,
     // Mastra session
     mastraSessionId,
-    mastraStatus,
-    initializeMastraSession
+    mastraStatus
   }
 
   return <SessionManagerContext.Provider value={value}>{children}</SessionManagerContext.Provider>
