@@ -58,72 +58,37 @@ function convertMCPToolToMastra(
     description: mcpTool.description || `MCP Tool: ${toolName}`,
     inputSchema: createPassthroughSchema(),
 
-    // Suspend/resume schemas for HITL approval
-    suspendSchema: z.object({
-      reason: z.string(),
-      toolName: z.string(),
-      serverId: z.string().optional(),
-      input: z.record(z.unknown())
-    }),
-    resumeSchema: z.object({
-      approved: z.boolean()
-    }),
-
     execute: async (ctx) => {
       logger.info('[MastraToolService] Executing tool', {
         toolName,
         serverId,
-        inputKeys: Object.keys(ctx.context || {}),
-        hasResumeData: !!ctx.resumeData
+        inputKeys: Object.keys(ctx.context || {})
       })
 
-      // HITL Approval Check - suspend execution if approval required and no resumeData
-      if (requireApproval && !ctx.resumeData && ctx.suspend) {
-        logger.info('[MastraToolService] Tool requires approval, suspending...', {
-          toolName,
-          serverId
-        })
+      // Note: Approval handling is now managed by Mastra stream-level approval
+      // via requireToolApproval: true in streamText()
 
-        return await ctx.suspend({
-          reason: `${toolName} requires approval`,
-          toolName,
-          serverId: serverId || 'unknown',
-          input: ctx.context
-        })
-      }
-
-      // Execute tool if approved or approval not required
-      if (!requireApproval || (ctx.resumeData && ctx.resumeData.approved)) {
-        logger.info('[MastraToolService] Executing tool (approved or auto-allowed)', {
-          toolName
-        })
-
-        try {
-          if (!mcpTool.execute) {
-            throw new Error(`Tool ${toolName} has no execute function`)
-          }
-
-          const result = await mcpTool.execute(ctx.context)
-
-          logger.info('[MastraToolService] Tool execution completed', {
-            toolName,
-            resultType: typeof result
-          })
-
-          return result
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err)
-          logger.error('[MastraToolService] Tool execution failed', {
-            toolName,
-            error: message
-          })
-          throw err
+      try {
+        if (!mcpTool.execute) {
+          throw new Error(`Tool ${toolName} has no execute function`)
         }
-      }
 
-      // Tool execution was declined
-      logger.info('[MastraToolService] Tool execution declined by user', { toolName })
-      throw new Error('Tool execution declined by user')
+        const result = await mcpTool.execute(ctx.context)
+
+        logger.info('[MastraToolService] Tool execution completed', {
+          toolName,
+          resultType: typeof result
+        })
+
+        return result
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        logger.error('[MastraToolService] Tool execution failed', {
+          toolName,
+          error: message
+        })
+        throw err
+      }
     }
   })
 }

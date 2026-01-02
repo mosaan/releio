@@ -1,4 +1,6 @@
+import { Mastra } from '@mastra/core/mastra'
 import { Agent } from '@mastra/core/agent'
+import { InMemoryStore } from '@mastra/core/storage'
 import type { MastraModelConfig } from '@mastra/core/llm'
 import type { UIMessage } from 'ai'
 import { randomUUID } from 'crypto'
@@ -16,11 +18,25 @@ type SessionRecord = {
   history: AIMessage[]
 }
 
+type MessagePart = {
+  kind: 'text' | 'tool_invocation' | 'tool_result'
+  content?: string
+  toolCallId?: string
+  toolName?: string
+  input?: unknown
+  output?: unknown
+}
+
 type StreamRecord = {
   streamId: string
   sessionId: string
   abortController: AbortController
   publishEvent: (channel: string, event: AppEvent) => void
+  suspended: boolean
+  // Deferred onFinish callback for tool approval flow
+  onFinish?: (parts: MessagePart[]) => Promise<void>
+  // Accumulated parts for deferred message saving
+  parts?: MessagePart[]
 }
 
 export type MastraStatus =
@@ -48,11 +64,19 @@ function isAbortError(error: unknown): boolean {
 }
 
 export class MastraChatService {
+  // Note: mastraInstance is created to support Mastra's storage/workflow features for tool approval
+  // The agent is registered with Mastra to enable InMemoryStore for suspend/resume workflows
+  private mastraInstance: Mastra | null = null
   private agent: Agent | null = null
   private selection: ProviderSelection | null = null
   private sessions = new Map<string, SessionRecord>()
   private streams = new Map<string, StreamRecord>()
   private readonly defaultResourceId = 'default-resource'
+
+  /** Get the Mastra instance (used for debugging/testing) */
+  getMastraInstance(): Mastra | null {
+    return this.mastraInstance
+  }
 
   constructor() {
     // Listen for MCP server status changes to re-initialize agent when servers connect
@@ -138,7 +162,8 @@ export class MastraChatService {
       streamId,
       sessionId: session.sessionId,
       abortController,
-      publishEvent
+      publishEvent,
+      suspended: false
     })
     session.history = messages
 
@@ -196,7 +221,9 @@ export class MastraChatService {
         format: 'aisdk',
         abortSignal: abortController.signal,
         threadId: session.threadId,
-        resourceId: session.resourceId
+        resourceId: session.resourceId,
+        requireToolApproval: true,
+        runId: streamId // Use streamId as runId for consistency
       })
 
       let assistantText = ''
@@ -290,15 +317,19 @@ export class MastraChatService {
               }
             })
             break
-          case 'tool-call-suspended':
-            // @ts-ignore - Mastra type definition access
-            const suspendedPayload = (value as any).payload || (value as any)
-            const suspendData = suspendedPayload.suspendPayload
+          case 'tool-call-approval':
+            const toolCallApproval = (value as any).payload || (value as any)
 
-            logger.info('[Mastra] Tool suspended, requiring approval', {
+            // Mark stream as suspended to prevent deletion in finally block
+            const streamRecord = this.streams.get(streamId)
+            if (streamRecord) {
+              streamRecord.suspended = true
+            }
+
+            logger.info('[Mastra] Tool approval required', {
               streamId,
-              toolCallId: suspendedPayload.toolCallId,
-              toolName: suspendedPayload.toolName
+              toolCallId: toolCallApproval.toolCallId,
+              toolName: toolCallApproval.toolName
             })
 
             publishEvent('mastraToolApprovalRequired', {
@@ -307,11 +338,11 @@ export class MastraChatService {
                 sessionId: session.sessionId,
                 streamId,
                 runId: streamId,
-                toolCallId: suspendedPayload.toolCallId,
-                toolName: suspendData?.toolName || suspendedPayload.toolName,
-                serverId: suspendData?.serverId || 'unknown',
-                input: suspendData?.input || {},
-                suspendData
+                toolCallId: toolCallApproval.toolCallId,
+                toolName: toolCallApproval.toolName,
+                serverId: 'unknown', // Server ID is not available in standard approval event
+                input: toolCallApproval.parameters || {},
+                suspendData: toolCallApproval
               }
             })
             break
@@ -350,12 +381,26 @@ export class MastraChatService {
         streamId,
         textLength: assistantText.length,
         partsCount: parts.length,
-        chunks: chunkCount
+        chunks: chunkCount,
+        suspended: this.streams.get(streamId)?.suspended
       })
 
-      // Call onFinish callback to persist message
-      if (onFinish) {
-        await onFinish(parts)
+      // Check if stream was suspended for tool approval
+      const streamRecordAfterLoop = this.streams.get(streamId)
+      if (streamRecordAfterLoop?.suspended) {
+        // Defer onFinish until after tool approval/continuation completes
+        // Store the callback and parts for later execution
+        streamRecordAfterLoop.onFinish = onFinish
+        streamRecordAfterLoop.parts = parts
+        logger.info('[Mastra] Deferring message save until tool approval completes', {
+          streamId,
+          partsCount: parts.length
+        })
+      } else {
+        // Normal flow: call onFinish immediately
+        if (onFinish) {
+          await onFinish(parts)
+        }
       }
     } catch (err) {
       if (isAbortError(err)) {
@@ -373,7 +418,11 @@ export class MastraChatService {
         })
       }
     } finally {
-      this.streams.delete(streamId)
+      // Don't delete stream if it's suspended - will be deleted after resumeToolExecution completes
+      const streamRecord = this.streams.get(streamId)
+      if (!streamRecord?.suspended) {
+        this.streams.delete(streamId)
+      }
     }
   }
 
@@ -385,24 +434,154 @@ export class MastraChatService {
       throw new Error('Agent not initialized')
     }
 
+    // Get the stream record to access sessionId, publishEvent, and deferred callback
+    const streamRecord = this.streams.get(runId)
+    if (!streamRecord) {
+      logger.error('[Mastra] Cannot resume - stream not found', { runId })
+      throw new Error(`Stream not found: ${runId}`)
+    }
+
+    const { sessionId, publishEvent, onFinish, parts: originalParts } = streamRecord
+
     logger.info('[Mastra] Resuming tool execution', {
       runId,
       toolCallId,
-      approved
+      approved,
+      sessionId,
+      hasDeferredCallback: !!onFinish,
+      originalPartsCount: originalParts?.length
     })
 
-    if (approved) {
-      await this.agent.approveToolCall({
+    // Track continuation parts (tool_result, additional text)
+    const continuationParts: MessagePart[] = []
+    let continuationText = ''
+
+    try {
+      // Call approve/decline and get the continuation stream
+      const continuationStream = approved
+        ? await this.agent.approveToolCall({
+            runId,
+            toolCallId,
+            format: 'aisdk'
+          })
+        : await this.agent.declineToolCall({
+            runId,
+            toolCallId,
+            format: 'aisdk'
+          })
+
+      logger.info('[Mastra] Reading continuation stream', { runId, approved })
+
+      // Read chunks from the continuation stream
+      const reader = continuationStream.fullStream.getReader()
+
+      while (true) {
+        const { value: originalValue, done } = await reader.read()
+        if (done) {
+          logger.info('[Mastra] Continuation stream completed', { runId })
+          break
+        }
+        if (!originalValue) {
+          continue
+        }
+        const value = originalValue as any
+
+        // Process each chunk type and publish to frontend
+        switch (value.type) {
+          case 'text-delta':
+            if (value.text) {
+              continuationText += value.text
+              publishEvent('mastraChatChunk', {
+                type: EventType.Message,
+                payload: { sessionId, streamId: runId, chunk: value.text }
+              })
+            }
+            break
+          case 'tool-result':
+            // Mastra/AI SDK may surface either `result` or `output`
+            const output = (value as any).result ?? (value as any).output
+            // Track tool result for deferred message saving
+            continuationParts.push({
+              kind: 'tool_result',
+              toolCallId: value.toolCallId,
+              toolName: value.toolName,
+              output
+            })
+            publishEvent('mastraToolResult', {
+              type: EventType.Message,
+              payload: {
+                sessionId,
+                streamId: runId,
+                toolCallId: value.toolCallId,
+                toolName: value.toolName,
+                output
+              }
+            })
+            logger.info('[Mastra] Tool result received', {
+              runId,
+              toolCallId: value.toolCallId,
+              toolName: value.toolName
+            })
+            break
+          case 'finish':
+            publishEvent('mastraChatEnd', {
+              type: EventType.Message,
+              payload: { sessionId, streamId: runId, text: '' }
+            })
+            break
+          case 'error':
+            const chunkError = (value as any).error
+            const errMessage =
+              typeof chunkError === 'string'
+                ? chunkError
+                : chunkError && typeof chunkError === 'object' && 'message' in chunkError
+                  ? (chunkError as Error).message
+                  : undefined
+            publishEvent('mastraChatError', {
+              type: EventType.Message,
+              payload: { sessionId, streamId: runId, error: errMessage }
+            })
+            break
+          default:
+            break
+        }
+      }
+
+      // After continuation completes, call deferred onFinish with merged parts
+      if (onFinish && originalParts) {
+        // Add any continuation text as a text part
+        if (continuationText) {
+          continuationParts.push({ kind: 'text', content: continuationText })
+        }
+
+        // Merge original parts with continuation parts
+        const mergedParts = [...originalParts, ...continuationParts]
+
+        logger.info('[Mastra] Calling deferred onFinish with merged parts', {
+          runId,
+          originalPartsCount: originalParts.length,
+          continuationPartsCount: continuationParts.length,
+          mergedPartsCount: mergedParts.length
+        })
+
+        await onFinish(mergedParts)
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error'
+      logger.error('[Mastra] Failed to resume tool execution', {
         runId,
         toolCallId,
-        format: 'aisdk'
+        error: message
       })
-    } else {
-      await this.agent.declineToolCall({
-        runId,
-        toolCallId,
-        format: 'aisdk'
+      publishEvent('mastraChatError', {
+        type: EventType.Message,
+        payload: { sessionId, streamId: runId, error: message }
       })
+      throw err
+    } finally {
+      // Clean up stream record after continuation completes
+      this.streams.delete(runId)
+      logger.info('[Mastra] Stream cleaned up after resume', { runId })
     }
   }
 
@@ -467,9 +646,18 @@ export class MastraChatService {
       model: modelConfig,
       tools
     })
+
+    // Initialize Mastra with InMemoryStorage to support tool approval workflows
+    this.mastraInstance = new Mastra({
+      agents: {
+        'mastra-assistant': this.agent
+      },
+      storage: new InMemoryStore()
+    })
+
     this.selection = selection
 
-    logger.info('[Mastra] Agent initialized', {
+    logger.info('[Mastra] Agent and Storage initialized', {
       provider: selection.provider,
       model: selection.model,
       baseURL: selection.baseURL ? 'custom' : 'default',
