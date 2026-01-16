@@ -23,3 +23,7 @@ tmp
 
 # Log files
 logs/.opencode/
+
+# MCPB Runtime files (downloaded during build)
+/build/runtimes/
+/build/*.zip

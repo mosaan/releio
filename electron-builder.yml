@@ -17,6 +17,11 @@ extraResources:
     to: .
     filter:
       - '**/*'
+  # Node.js and Python runtimes for MCPB support
+  - from: build/runtimes
+    to: runtimes
+    filter:
+      - '**/*'
 win:
   executableName: releio
   target:
