@@ -10,6 +10,7 @@ import type {
   MCPPrompt,
   ProxySettings,
   CertificateSettings,
+  CustomCertificate,
   ConnectionTestResult,
   MCPServerWithStatus,
   AIProviderConfiguration,
@@ -35,7 +36,10 @@ import {
 import {
   getCertificateSettings as loadCertificateSettings,
   setCertificateSettings as saveCertificateSettings,
-  getSystemCertificateSettings as loadSystemCertificateSettings
+  getSystemCertificateSettings as loadSystemCertificateSettings,
+  addCustomCertificate,
+  removeCustomCertificate,
+  validateCustomCertificates
 } from './settings/certificate'
 import {
   testProxyConnection as runProxyTest,
@@ -286,6 +290,21 @@ export class Handler {
   async getSystemCertificateSettings(): Promise<Result<CertificateSettings>> {
     const settings = await loadSystemCertificateSettings()
     return ok(settings)
+  }
+
+  async addCustomCertificate(certPath: string, displayName?: string): Promise<Result<CustomCertificate>> {
+    const certificate = await addCustomCertificate(certPath, displayName)
+    return ok(certificate)
+  }
+
+  async removeCustomCertificate(certificateId: string): Promise<Result<void>> {
+    await removeCustomCertificate(certificateId)
+    return ok(undefined)
+  }
+
+  async validateCustomCertificates(): Promise<Result<Array<{ id: string; path: string; valid: boolean; error?: string }>>> {
+    const results = await validateCustomCertificates()
+    return ok(results)
   }
 
   // Connection test handlers
