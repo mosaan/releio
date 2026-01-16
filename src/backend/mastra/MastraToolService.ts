@@ -3,17 +3,16 @@
  *
  * This service bridges the gap between AI SDK v5 format tools (from MCP)
  * and Mastra's tool format, including HITL (Human-in-the-Loop) approval support.
+ *
+ * Uses Mastra's native suspend/resume pattern for tool approval flow.
  */
 
 import { createTool } from '@mastra/core/tools'
 import type { ToolAction } from '@mastra/core/tools'
 import { z } from 'zod'
-import { randomUUID } from 'node:crypto'
 import { mcpManager } from '../mcp'
 import logger from '../logger'
 import { toolPermissionService } from './ToolPermissionService'
-import { sessionContext } from './session-context'
-import { approvalManager } from './ApprovalManager'
 
 // JSON Schema to Zod conversion is complex, so we use a passthrough schema
 // that accepts any input matching the original JSON schema structure
@@ -33,6 +32,7 @@ export type MastraToolRecord = Record<string, MastraTool>
 
 /**
  * Converts an MCP tool (AI SDK v5 format) to a Mastra tool
+ * Uses suspend/resume pattern for HITL approval
  */
 function convertMCPToolToMastra(
   toolName: string,
@@ -57,54 +57,23 @@ function convertMCPToolToMastra(
     id: toolName,
     description: mcpTool.description || `MCP Tool: ${toolName}`,
     inputSchema: createPassthroughSchema(),
-    requireApproval,
-    execute: async ({ context }) => {
+
+    execute: async (ctx) => {
       logger.info('[MastraToolService] Executing tool', {
         toolName,
         serverId,
-        inputKeys: Object.keys(context || {})
+        inputKeys: Object.keys(ctx.context || {})
       })
 
-      // HITL Approval Check
-      if (requireApproval) {
-        const store = sessionContext.getStore()
-
-        if (store) {
-          logger.info('[MastraToolService] Tool requires approval, requesting...', {
-            toolName,
-            sessionId: store.sessionId
-          })
-
-          const approved = await approvalManager.requestApproval({
-            sessionId: store.sessionId,
-            streamId: store.streamId,
-            toolCallId: randomUUID(), // We don't have the exact LLM toolCallId here, so generate one
-            toolName,
-            input: context
-          })
-
-          if (!approved) {
-            logger.info('[MastraToolService] Tool execution declined by user', { toolName })
-            throw new Error('Tool execution declined by user')
-          }
-
-          logger.info('[MastraToolService] Tool execution approved', { toolName })
-        } else {
-          logger.warn(
-            '[MastraToolService] Tool requires approval but no session context found. Auto-allowing (fallback).',
-            {
-              toolName
-            }
-          )
-        }
-      }
+      // Note: Approval handling is now managed by Mastra stream-level approval
+      // via requireToolApproval: true in streamText()
 
       try {
         if (!mcpTool.execute) {
           throw new Error(`Tool ${toolName} has no execute function`)
         }
 
-        const result = await mcpTool.execute(context)
+        const result = await mcpTool.execute(ctx.context)
 
         logger.info('[MastraToolService] Tool execution completed', {
           toolName,

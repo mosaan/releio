@@ -783,9 +783,19 @@ export class Handler {
 
   async approveToolCall(runId: string, toolCallId?: string): Promise<Result<void, string>> {
     try {
+      // Phase 5: Switch to Mastra native suspend/resume
+      // If toolCallId is provided, use Mastra's resumeToolExecution
+      if (toolCallId) {
+        await mastraChatService.resumeToolExecution(runId, toolCallId, true)
+        logger.info('[HITL] Tool call approved', { runId, toolCallId })
+        return ok(undefined)
+      }
+
+      // Fallback for legacy behavior (if any pending requests in ApprovalManager)
+      // TODO: Remove after full migration
       const success = approvalManager.approve(runId)
       if (success) {
-        logger.info('[HITL] Tool call approved', { runId, toolCallId })
+        logger.info('[HITL] Tool call approved (legacy)', { runId })
         return ok(undefined)
       } else {
         logger.warn('[HITL] Approval request not found or timed out', { runId })
@@ -803,9 +813,18 @@ export class Handler {
     reason?: string
   ): Promise<Result<void, string>> {
     try {
+      // Phase 5: Switch to Mastra native suspend/resume
+      if (toolCallId) {
+        await mastraChatService.resumeToolExecution(runId, toolCallId, false)
+        logger.info('[HITL] Tool call declined', { runId, toolCallId, reason })
+        return ok(undefined)
+      }
+
+      // Fallback for legacy behavior
+      // TODO: Remove after full migration
       const success = approvalManager.decline(runId, reason)
       if (success) {
-        logger.info('[HITL] Tool call declined', { runId, toolCallId, reason })
+        logger.info('[HITL] Tool call declined (legacy)', { runId, toolCallId, reason })
         return ok(undefined)
       } else {
         logger.warn('[HITL] Approval request not found or timed out', { runId })
